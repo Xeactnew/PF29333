@@ -869,9 +869,53 @@ def plan_page(request: Request, s=Depends(db_session)):
                                                     UpgradeRequest.status == "pending"))
     plans = _plans(s)
     top = bool(plans) and user.plan_id == max(plans, key=lambda p: (p.monthly_price or 0, p.lifetime_price or 0)).id
+    from . import customer_alerts, runtime
     return render(request, "plan.html", {"user": user, "plans": plans, "pending": pending, "choose": True, "top": top,
                                          "contact_text": get_setting(s, "contact_text"),
-                                         "contact_link": get_setting(s, "contact_link")})
+                                         "contact_link": get_setting(s, "contact_link"),
+                                         "alerts_ready": bool(runtime.bot_username()),
+                                         "alert_prefs": customer_alerts.prefs(user)})
+
+
+@router.post("/profile/alerts/link")
+async def alerts_link(request: Request, s=Depends(db_session)):
+    """One tap: straight to the bot in Telegram with a code that links this login."""
+    user = current_user(request, s)
+    await form_data(request)
+    from . import customer_alerts, runtime
+    bot = runtime.bot_username()
+    if not bot:
+        flash(request, "Telegram alerts aren't available yet. Try again later.", "err")
+        return redirect("/plan#alerts")
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(f"https://t.me/{bot}?start={customer_alerts.new_link_code(user.id)}", status_code=303)
+
+
+@router.post("/profile/alerts")
+async def alerts_save(request: Request, s=Depends(db_session)):
+    user = current_user(request, s)
+    form = await form_data(request)
+    from . import customer_alerts
+    action = form.get("action")
+    if action == "unlink":
+        user.alert_chat_id = None
+        services.log(s, "alerts_telegram_unlinked", user.id, "", user.username)
+        s.commit()
+        flash(request, "Telegram alerts are off.")
+        return redirect("/plan#alerts")
+    if action == "test":
+        if user.alert_chat_id and customer_alerts.queue(s, user, "test", f"test:{user.id}:{int(utcnow().timestamp())}",
+                                                        customer_alerts.test_text(user)):
+            s.commit()
+            tg.wake_bot()
+            flash(request, "Test sent. It should reach your Telegram in a few seconds.")
+        else:
+            flash(request, "Connect Telegram first.", "err")
+        return redirect("/plan#alerts")
+    user.alert_prefs = customer_alerts.clean_prefs(form)
+    s.commit()
+    flash(request, "Alert settings saved.")
+    return redirect("/plan#alerts")
 
 
 @router.post("/plan/request")

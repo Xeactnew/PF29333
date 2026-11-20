@@ -498,6 +498,56 @@ async def _send_outbox(http) -> None:
                 pass
 
 
+def _customer_link(code: str, chat_id: int) -> str | None:
+    from . import customer_alerts
+    with SessionLocal() as s:
+        u = customer_alerts.link_chat(s, code, chat_id)
+        if not u:
+            return None
+        services.log(s, "alerts_telegram_linked", u.id, "", u.username)
+        s.commit()
+        return u.username
+
+
+def _customer_unlink(chat_id: int) -> int:
+    from . import customer_alerts
+    with SessionLocal() as s:
+        n = customer_alerts.unlink_chat(s, chat_id)
+        s.commit()
+        return n
+
+
+def _alerts_due() -> list[tuple[int, int, str]]:
+    from . import customer_alerts
+    with SessionLocal() as s:
+        rows = [(a.id, a.chat_id, a.text) for a in customer_alerts.due(s)]
+        s.commit()
+        return rows
+
+
+def _alert_done(alert_id: int, error: str | None) -> None:
+    from . import customer_alerts
+    with SessionLocal() as s:
+        customer_alerts.mark(s, alert_id, error)
+        s.commit()
+
+
+async def _send_customer_alerts(http) -> int:
+    """Customers' trade alerts: a few per chat per pass (Telegram allows about one a second per chat)."""
+    sent = 0
+    for alert_id, chat, text in await asyncio.to_thread(_alerts_due):
+        try:
+            await _bot(http, "sendMessage", chat_id=chat, text=text, disable_web_page_preview=True)
+            err = None
+            sent += 1
+        except Exception as e:  # noqa: BLE001
+            err = str(e) or "send failed"
+            log.warning("customer alert %s to %s failed: %s", alert_id, chat, err)
+        await asyncio.to_thread(_alert_done, alert_id, err)
+        await asyncio.sleep(0.05)
+    return sent
+
+
 def _who(cb: dict) -> str:
     f = cb.get("from", {})
     return f.get("username") and "@" + f["username"] or f.get("first_name") or str(f.get("id"))
@@ -577,8 +627,21 @@ async def _handle_update(http, upd: dict) -> None:
         if doc and chat in set(admin_chat_ids()):
             await _bot_update_from_zip(http, chat, doc)
             return
+        if text.split()[:1] == ["/stop"] or text.split("@")[0] == "/stop":
+            n = await asyncio.to_thread(_customer_unlink, chat)
+            await _bot(http, "sendMessage", chat_id=chat,
+                       text="🔕 Alerts are off. You can link again any time from Plan & login on the website."
+                       if n else "Alerts weren't on for this chat.")
+            return
         if text.startswith("/start"):
             parts = text.split()
+            if len(parts) == 2 and parts[1].startswith("c"):
+                name = await asyncio.to_thread(_customer_link, parts[1], chat)
+                await _bot(http, "sendMessage", chat_id=chat, text=(
+                    f"✅ You're linked, {name}. Trade alerts for your accounts arrive here. Choose which ones "
+                    f"on the website under Plan & login. Send /stop to turn them off.") if name else
+                    "That link has expired. Open Plan & login on the website and tap Connect Telegram again.")
+                return
             if len(parts) == 2:
                 who = await asyncio.to_thread(link_admin_chat, parts[1], chat)
                 if who:
@@ -592,7 +655,8 @@ async def _handle_update(http, upd: dict) -> None:
             allowed = chat in set(admin_chat_ids())
             await _bot(http, "sendMessage", chat_id=chat,
                        text="✅ You're set up for PipsFarmer alerts. Send /help for account reports." if allowed else
-                       "This is a private bot. Admins link it from Admin → Telegram.")
+                       f"👋 This bot sends {config.SITE_NAME} trade alerts. To get yours, log in on the website, "
+                       f"open Plan & login and tap Connect Telegram.")
             return
         if text.startswith("/") and chat in set(admin_chat_ids()):
             if text.split()[0].split("@")[0].lower() == "/update":
@@ -791,6 +855,10 @@ async def run_bot() -> None:
                     log.warning("couldn't set the bot's command menu")
             try:
                 await _send_outbox(http)
+                try:
+                    await _send_customer_alerts(http)
+                except Exception:  # noqa: BLE001
+                    log.exception("customer alerts")
                 wait = 0 if _bot_wake["v"] else 5
                 _bot_wake["v"] = False
                 updates = await _bot(http, "getUpdates", offset=offset, timeout=wait,

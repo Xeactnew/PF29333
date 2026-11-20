@@ -64,6 +64,9 @@
     tr.addEventListener("click", (e) => { if (!e.target.closest("a,button,form")) location.href = tr.dataset.href; });
   });
 
+  // Times the customer picks (daily summary) are in their own time zone: send its offset with the form.
+  document.querySelectorAll("input[data-tz]").forEach((i) => { i.value = String(new Date().getTimezoneOffset()); });
+
   document.querySelectorAll("[data-confirm]").forEach((b) => {
     b.addEventListener("click", (e) => { if (!confirm(b.dataset.confirm)) e.preventDefault(); });
   });

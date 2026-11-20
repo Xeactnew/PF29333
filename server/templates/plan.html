@@ -30,6 +30,36 @@
 {% include "_plan_cards.html" %}
 {% if top %}</div></details>{% endif %}
 
+<section class="panel" id="alerts" style="margin-top:18px">
+  <div class="panel-head"><h2>Trade alerts on Telegram</h2>
+    {% if user.alert_chat_id %}<span class="tag go">Connected</span>{% else %}<span class="tag hold">Off</span>{% endif %}</div>
+  {% if not user.alert_chat_id %}
+    <p class="muted">Get a message when a trade opens or closes, when a stop moves to entry, and if something on an account needs you. Short and to the point.</p>
+    {% if alerts_ready %}
+      <form method="post" action="/profile/alerts/link">{{ m.csrf_field(csrf) }}
+        <button class="btn primary" type="submit">Connect Telegram</button></form>
+      <p class="muted" style="font-size:13px;margin-top:8px">Opens Telegram. Tap <b>Start</b> in the chat and you're done.</p>
+    {% else %}
+      <p class="muted">Telegram alerts aren't switched on yet. Check back soon.</p>
+    {% endif %}
+  {% else %}
+    <form method="post" action="/profile/alerts" class="alerts-form">
+      {{ m.csrf_field(csrf) }}<input type="hidden" name="tz_offset" value="{{ alert_prefs.tz_offset }}" data-tz>
+      <label class="switch"><input type="checkbox" name="open" {{ 'checked' if alert_prefs.open }}> <span>Trade opened<small>One message per signal: group, buy or sell, lots, entry, stop and targets</small></span></label>
+      <label class="switch"><input type="checkbox" name="close" {{ 'checked' if alert_prefs.close }}> <span>Trade closed<small>The result, and today's total so far</small></span></label>
+      <label class="switch"><input type="checkbox" name="manage" {{ 'checked' if alert_prefs.manage }}> <span>Stop to entry and partial profits</span></label>
+      <label class="switch"><input type="checkbox" name="problems" {{ 'checked' if alert_prefs.problems }}> <span>Account problems<small>MT5 not connected, wrong password, Algo Trading off, a signal not taken and why</small></span></label>
+      <label class="switch"><input type="checkbox" name="daily" {{ 'checked' if alert_prefs.daily }} data-reveal> <span>Daily summary</span></label>
+      <div class="fields reveal"><div class="field" style="max-width:200px"><label for="al-time">Send it at (your time)</label><input id="al-time" name="daily_time" type="time" value="{{ alert_prefs.daily_time }}"></div></div>
+      <div class="savebar"><span>Send /stop in the bot to turn everything off.</span><button class="btn primary" type="submit">Save alerts</button></div>
+    </form>
+    <div class="actions" style="margin-top:12px">
+      <form method="post" action="/profile/alerts">{{ m.csrf_field(csrf) }}<input type="hidden" name="action" value="test"><button class="btn small" type="submit">Send a test</button></form>
+      <form method="post" action="/profile/alerts">{{ m.csrf_field(csrf) }}<input type="hidden" name="action" value="unlink"><button class="btn small" type="submit" data-confirm="Stop Telegram alerts?">Disconnect</button></form>
+    </div>
+  {% endif %}
+</section>
+
 <div class="grid g2" style="margin-top:18px">
 <section class="panel">
   <h2>Email</h2>

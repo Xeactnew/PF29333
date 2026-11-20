@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 from datetime import datetime, timedelta
 
@@ -11,11 +12,12 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import PlainTextResponse, Response
 from sqlalchemy import select
 
-from . import notify, runtime, security, services, system
+from . import customer_alerts, notify, runtime, security, services, system
 from .db import Account, Deal, NewsEvent, Node, Snapshot, utcnow
 from .web import db_session
 
 router = APIRouter(prefix="/api")
+log = logging.getLogger("pf.api")
 
 
 def _node(s, authorization: str | None) -> Node:
@@ -104,6 +106,8 @@ async def worker_poll(account_id: int, request: Request, s=Depends(db_session),
     settings = services.worker_settings(acc)
     events = services.events_for_account(s, acc)
     s.commit()
+    if rep:
+        _alerts(s, customer_alerts.on_report, acc, rep)
     return {"copy_enabled": bool(acc.copy_enabled and services.user_can_trade(acc.user)),
             "settings": settings, "news": _news_windows(s, settings),
             "events": [{"id": e.id, "kind": e.kind, **e.payload} for e in events],
@@ -118,19 +122,39 @@ async def worker_deals(account_id: int, request: Request, s=Depends(db_session),
     body = await request.json()
     have = set(s.scalars(select(Deal.ticket).where(Deal.account_id == acc.id,
                                                    Deal.ticket.in_([d["ticket"] for d in body.get("deals", [])] or [-1]))))
-    added = 0
+    new = []
     for d in body.get("deals", []):
         if d["ticket"] in have:
             continue
-        s.add(Deal(account_id=acc.id, ticket=int(d["ticket"]), position_id=int(d.get("position_id", 0)),
+        have.add(d["ticket"])
+        row = Deal(account_id=acc.id, ticket=int(d["ticket"]), position_id=int(d.get("position_id", 0)),
                    time=datetime(1970, 1, 1) + timedelta(seconds=float(d["time"])),
                    symbol=str(d.get("symbol", ""))[:32], side=d.get("side", ""), entry=d.get("entry", ""),
                    volume=float(d.get("volume", 0)), price=float(d.get("price", 0)),
                    profit=float(d.get("profit", 0)), ours=bool(d.get("ours")),
-                   signal_id=d.get("signal_id"), comment=str(d.get("comment", ""))[:64]))
-        added += 1
+                   signal_id=d.get("signal_id"), comment=str(d.get("comment", ""))[:64])
+        s.add(row)
+        new.append(row)
     s.commit()
-    return {"added": added}
+    if new:
+        _alerts(s, customer_alerts.on_deals, acc, new)
+    return {"added": len(new)}
+
+
+def _alerts(s, fn, acc, data) -> None:
+    """Customer alerts run after the worker's data is safely saved: a problem here loses an alert, never a deal."""
+    try:
+        s.info["alerts_queued"] = 0
+        fn(s, acc, data)
+        queued = s.info.pop("alerts_queued", 0)
+        s.commit()
+    except Exception:  # noqa: BLE001
+        s.rollback()
+        log.exception("customer alerts for account %s", acc.id)
+        return
+    if queued:
+        from . import telegram_service
+        telegram_service.wake_bot()
 
 
 @router.get("/node/package")

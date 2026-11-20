@@ -66,6 +66,10 @@ class User(Base):
     # access time limit set by an admin (None = no limit); the account closes by itself when it passes
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     reminders_sent: Mapped[dict] = mapped_column(JSON, default=dict)
+    # trade alerts through the Telegram bot (linked with a one-tap deep link from Plan & login)
+    alert_chat_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    alert_prefs: Mapped[dict] = mapped_column(JSON, default=dict)
+    alert_state: Mapped[dict] = mapped_column(JSON, default=dict)     # e.g. last daily summary date
 
     plan: Mapped[Plan] = relationship()
     accounts: Mapped[list["Account"]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -109,6 +113,7 @@ class Account(Base):
     live_state: Mapped[dict] = mapped_column(JSON, default=dict)     # positions, pendings, blocks
     last_report: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    alert_state: Mapped[dict] = mapped_column(JSON, default=dict)     # what customer alerts already covered
 
     user: Mapped[User] = relationship(back_populates="accounts")
     node: Mapped[Node | None] = relationship()
@@ -303,6 +308,24 @@ class TicketMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     ticket: Mapped[Ticket] = relationship(back_populates="messages")
+
+
+class CustomerAlert(Base):
+    """A trade alert for a customer's Telegram. `key` is unique, so the same alert is never queued twice;
+    the bot sends queued ones and retries failures with a growing wait."""
+    __tablename__ = "customer_alerts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    chat_id: Mapped[int] = mapped_column(Integer)
+    key: Mapped[str] = mapped_column(String(128), unique=True)
+    kind: Mapped[str] = mapped_column(String(16))                    # open / close / manage / problems / daily / test
+    text: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)  # queued / sent / failed / dropped
+    tries: Mapped[int] = mapped_column(Integer, default=0)
+    next_try: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class Setting(Base):

@@ -208,6 +208,8 @@ def cleanup_tick() -> None:
     with SessionLocal() as s:
         s.execute(delete(Event).where(Event.created_at < utcnow() - timedelta(days=14)))
         s.execute(delete(Snapshot).where(Snapshot.time < utcnow() - timedelta(days=180)))
+        from .db import CustomerAlert          # keys are kept 30 days so nothing is ever sent twice
+        s.execute(delete(CustomerAlert).where(CustomerAlert.created_at < utcnow() - timedelta(days=30)))
         s.commit()
 
 
@@ -442,6 +444,27 @@ async def run_daily() -> None:
         await asyncio.sleep(300)
 
 
+def customer_daily_tick(now: datetime | None = None) -> int:
+    """Each customer's daily summary on Telegram, at the time they picked."""
+    from . import customer_alerts
+    with SessionLocal() as s:
+        n = customer_alerts.daily_tick(s, now)
+        s.commit()
+    if n:
+        from . import telegram_service
+        telegram_service.wake_bot()
+    return n
+
+
+async def run_customer_daily() -> None:
+    while True:
+        try:
+            await asyncio.to_thread(customer_daily_tick)
+        except Exception:  # noqa: BLE001
+            log.exception("customer daily summaries")
+        await asyncio.sleep(60)
+
+
 # ------------------------------------------------------------ signals log on disk
 _signals_seen: dict = {"fp": None}
 
@@ -470,4 +493,4 @@ async def run_signals_log() -> None:
 
 async def run_all() -> None:
     await asyncio.gather(run_assignment(), run_renewals(), run_news(), run_cleanup(), run_watch(), run_daily(),
-                         run_mail(), run_signals_log())
+                         run_mail(), run_signals_log(), run_customer_daily())
