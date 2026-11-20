@@ -156,7 +156,7 @@
     </details>
 
     <details class="sec">
-      <summary><b>Risk</b><small>{% if settings.lot_mode == "fixed" %}{{ settings.fixed_lot }} lots per layer{% elif settings.lot_mode == "risk_percent" %}{{ settings.risk_percent }}% per signal{% else %}{{ settings.risk_amount|money(cur) }} per signal{% endif %}</small></summary>
+      <summary><b>Risk</b><small>{% if settings.lot_mode == "fixed" %}{{ settings.fixed_lot }} lots per layer{% elif settings.lot_mode == "risk_percent" %}{{ settings.risk_percent }}% per signal{% else %}{{ settings.risk_amount|money(cur) }} per signal{% endif %}{% if settings.max_open_lots %} · max {{ settings.max_open_lots }} lots open{% endif %}</small></summary>
       <div class="sec-body">
       <div class="fields">
         <div class="field"><label for="s-lot_mode">Lot size</label>
@@ -167,6 +167,7 @@
         {{ num("risk_percent", "Risk per signal (%)", "0.1", "Lost if every layer hits SL", "risk_percent") }}
         {{ num("risk_amount", "Risk per signal (" ~ (cur or "money") ~ ")", "1", "Lost if every layer hits SL", "risk_amount") }}
         {{ num("max_lot", "Largest lot per order", "0.01", "Safety cap") }}
+        {{ num("max_open_lots", "Maximum lots open", "0.01", "Open trades + pending orders + waiting entries together. A layer that would go over is trimmed to fit or skipped. 0 means no cap") }}
       </div>
       {{ lock(["lot_mode"]) }}
       </div>

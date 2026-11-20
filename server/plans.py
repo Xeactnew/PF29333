@@ -69,6 +69,7 @@ DEFAULT_ACCOUNT_SETTINGS = {
     "risk_percent": 1.0,          # of balance, whole signal (split across layers)
     "risk_amount": 10.0,          # account currency, whole signal
     "max_lot": 1.0,               # safety cap per order
+    "max_open_lots": 0.0,         # most lots open + pending + waiting at once on the account; 0 = no cap
     "layers": 1,
     "tp_target": "spread",        # spread / tp1 / tp2 / tp3 / last
     "breakeven_at_tp1": True,
@@ -143,6 +144,7 @@ def clean_settings(raw: dict) -> dict:
     d["risk_percent"] = _num(raw.get("risk_percent"), d["risk_percent"], 0.01, 20)
     d["risk_amount"] = _num(raw.get("risk_amount"), d["risk_amount"], 0.01, 1_000_000)
     d["max_lot"] = round(_num(raw.get("max_lot"), d["max_lot"], 0.01, 100), 2)
+    d["max_open_lots"] = round(_num(raw.get("max_open_lots"), d["max_open_lots"], 0, 1000), 2)
     d["layers"] = _num(raw.get("layers"), d["layers"], 1, 20, int)
     d["tp_target"] = raw.get("tp_target") if raw.get("tp_target") in TP_TARGETS else d["tp_target"]
     for b in ("breakeven_at_tp1", "cancel_pending_after_tp1", "cancel_pending_on_be", "follow_updates", "require_sl", "instant_entry",

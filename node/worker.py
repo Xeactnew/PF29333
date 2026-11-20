@@ -585,11 +585,24 @@ class Worker:
         dist = float(s.get("smart_distance_pips", 20)) * tl.PIP
         spread_ok = not s.get("max_spread_pips") or (t.ask - t.bid) / tl.PIP <= float(s["max_spread_pips"])
         side = rec["side"]
+        cap = float(s.get("max_open_lots") or 0)
+        capped: list[str] = []
         for L in rec["layers"]:
             if L["state"] not in ("new", "wait"):
                 continue
             act = tl.entry_action(side, rec["order_type"], L["level"], t.bid, t.ask, smart, dist)
             comment = f"PF{sid}-{L['i']}"
+            if cap and act in ("market", "limit", "stop") and (act != "market" or spread_ok):
+                used = self.lots_in_use(exclude=L)
+                info = self.sinfo()
+                fit = tl.fit_under_cap(L["lot"], used, cap, info.volume_step, info.volume_min)
+                if not fit:
+                    L["state"] = "skipped"
+                    capped.append(f"layer {L['i'] + 1} skipped ({used:g} lots already open or waiting)")
+                    continue
+                if fit < L["lot"]:
+                    capped.append(f"layer {L['i'] + 1} trimmed from {L['lot']:g} to {fit:g} lots")
+                    L["lot"] = fit
             if act == "market":
                 if not spread_ok:
                     L["state"] = "wait"
@@ -611,6 +624,21 @@ class Worker:
                     L["state"] = "failed"
             else:
                 L["state"] = "wait"
+        if capped:
+            if all(L["state"] == "skipped" for L in rec["layers"]):
+                self.note(f"signal #{sid} skipped: your maximum of {cap:g} lots open is reached")
+            else:
+                self.note(f"signal #{sid}: maximum {cap:g} lots open: " + "; ".join(capped))
+
+    def lots_in_use(self, exclude: dict | None = None) -> float:
+        """Lots this account has in play: open positions + pending orders + layers waiting to enter."""
+        used = sum(p.volume for p in self.our_positions())
+        used += sum(getattr(o, "volume_current", 0) or 0 for o in self.our_orders())
+        for rec in self.state["signals"].values():
+            if rec.get("finished"):
+                continue
+            used += sum(L["lot"] for L in rec["layers"] if L["state"] == "wait" and L is not exclude)
+        return round(used, 2)
 
     # -------------------------------------------------------------- management
     def move_to_breakeven(self, sid: str, rec: dict, lock_pips: float | None = None,
@@ -852,7 +880,7 @@ class Worker:
             elif now > rec["expires"] and any(L["state"] == "pending" for L in rec["layers"]):
                 self.cancel_entries(sid, rec, "entry time ran out")
                 changed = True
-            if all(L["state"] in ("done", "cancelled", "expired", "failed") for L in rec["layers"]):
+            if all(L["state"] in ("done", "cancelled", "expired", "failed", "skipped") for L in rec["layers"]):
                 rec["finished"] = True
                 changed = True
         if changed:

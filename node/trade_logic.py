@@ -41,6 +41,17 @@ def round_lot(lot: float, step: float, vmin: float, vmax: float) -> float:
     return round(lot, decimals) if lot >= vmin - 1e-9 else 0.0
 
 
+def fit_under_cap(lot: float, used: float, cap: float, step: float, vmin: float) -> float:
+    """Lot a new order may use when at most `cap` lots may be open (0 = no cap): the full lot, a trimmed
+    lot that still meets the broker's minimum, or 0 (skip)."""
+    if not cap or cap <= 0:
+        return lot
+    room = cap - used
+    if room >= lot - 1e-9:
+        return lot
+    return round_lot(max(0.0, room), step, vmin, lot)
+
+
 def lot_per_layer(settings: dict, n_layers: int, balance: float, loss_per_lot: list[float],
                   step: float, vmin: float, vmax: float) -> tuple[float, str]:
     """Same lot on every layer. loss_per_lot[i] = money lost by 1.0 lot of layer i at SL.
