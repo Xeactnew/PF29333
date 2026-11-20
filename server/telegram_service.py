@@ -521,8 +521,10 @@ def link_admin_chat(code: str, chat_id: int) -> str | None:
 
 REPORT_BUTTONS = [[("💰 P&L today", "rp:pnl:today"), ("📅 Week", "rp:pnl:week"), ("🗓 Month", "rp:pnl:month")],
                   [("👥 Accounts", "rp:accounts"), ("📌 Open trades", "rp:positions")],
-                  [("📒 Signals log (Excel)", "rp:signals")]]
+                  [("📒 Signals log (Excel)", "rp:signals")],
+                  [("⬆️ Update from GitHub", "gh:check")]]
 BOT_COMMANDS = [("accounts", "Every account, its size and today's P&L"),
+                ("update", "Check GitHub for a new version and install it"),
                 ("pnl", "Closed P&L: today, week, month or all"),
                 ("positions", "Every open trade right now"),
                 ("account", "One account in detail: /account <login or username>"),
@@ -593,6 +595,9 @@ async def _handle_update(http, upd: dict) -> None:
                        "This is a private bot. Admins link it from Admin → Telegram.")
             return
         if text.startswith("/") and chat in set(admin_chat_ids()):
+            if text.split()[0].split("@")[0].lower() == "/update":
+                await _gh_check_reply(http, chat)
+                return
             if text.split()[0].split("@")[0].lower() in ("/signals", "/log"):
                 data = await asyncio.to_thread(_signals_file)
                 await _bot(http, "sendDocument", files={"document": (f"PipsFarmer signals {time.strftime('%Y-%m-%d')}.xlsx", data)},
@@ -622,6 +627,9 @@ async def _handle_update(http, upd: dict) -> None:
             await _send_report(http, cb["message"]["chat"]["id"], reply)
         return
     data = cb.get("data", "")
+    if data.startswith("gh:"):
+        await _gh_callback(http, cb, data)
+        return
     if data.startswith("up:"):
         _, key, ans = data.split(":")
         root = _staged_updates.pop(key, None)
@@ -671,6 +679,57 @@ async def _handle_update(http, upd: dict) -> None:
         notify.users_changed()
         renewal_answered(int(rid), text)
         await _bot(http, "answerCallbackQuery", callback_query_id=cb["id"], text="Done")
+
+
+async def _gh_check_reply(http, chat: int, edit_message_id: int | None = None) -> None:
+    """Admin asked to update from GitHub: show installed vs latest, then ask before installing."""
+    from . import github_update as gh
+    markup = None
+    try:
+        c = await asyncio.to_thread(gh.check)
+        text = "⬆️ Update from GitHub\n\n" + gh.describe(c)
+        if c["new"]:
+            text += "\n\nInstall it? The database is backed up first and trades stay open."
+            markup = {"inline_keyboard": [[{"text": "⬆️ Install", "callback_data": f"gh:go:{c['sha'][:12]}"},
+                                           {"text": "Cancel", "callback_data": "gh:no"}]]}
+    except Exception as e:  # noqa: BLE001
+        text = f"Couldn't check GitHub: {e}\nSave a token in Admin → System → Update from GitHub."
+    params = {"chat_id": chat, "text": text, "disable_web_page_preview": True}
+    if markup:
+        params["reply_markup"] = markup
+    if edit_message_id:
+        await _bot(http, "editMessageText", message_id=edit_message_id, **params)
+    else:
+        await _bot(http, "sendMessage", **params)
+
+
+async def _gh_callback(http, cb: dict, data: str) -> None:
+    from . import github_update as gh
+    chat, mid = cb["message"]["chat"]["id"], cb["message"]["message_id"]
+    parts = data.split(":")
+    if parts[1] == "check":
+        await _bot(http, "answerCallbackQuery", callback_query_id=cb["id"], text="Checking GitHub…")
+        await _gh_check_reply(http, chat)
+        return
+    if parts[1] != "go" or len(parts) < 3:
+        await _bot(http, "answerCallbackQuery", callback_query_id=cb["id"], text="Cancelled")
+        await _bot(http, "editMessageText", chat_id=chat, message_id=mid, text="Update cancelled.")
+        return
+    await _bot(http, "answerCallbackQuery", callback_query_id=cb["id"], text="Downloading…")
+    try:
+        latest = await asyncio.to_thread(gh.check)
+        if not latest["sha"].startswith(parts[2]):
+            await _gh_check_reply(http, chat, edit_message_id=mid)   # main moved on: ask again
+            return
+        sha = await asyncio.to_thread(gh.install, latest["sha"], _who(cb))
+        with SessionLocal() as s:
+            services.log(s, "update_started", None, f"github {sha[:7]}", _who(cb))
+            s.commit()
+        text = (f"⬆️ Installing commit {sha[:7]} from GitHub (started by {_who(cb)}). The site is back in about "
+                f"a minute; other VPS update themselves after that.")
+    except Exception as e:  # noqa: BLE001
+        text = f"Update didn't start: {e}"
+    await _bot(http, "editMessageText", chat_id=chat, message_id=mid, text=text)
 
 
 async def _bot_update_from_zip(http, chat: int, doc: dict) -> None:

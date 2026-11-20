@@ -46,8 +46,17 @@ if (Test-Path "$Dest\data\pipsfarmer.db") { Copy-Item "$Dest\data\pipsfarmer.db"
 Get-ChildItem "$Dest\backups\*.db" | Sort-Object LastWriteTime -Descending | Select-Object -Skip 10 | Remove-Item -ErrorAction SilentlyContinue
 
 Write-Host "==> Copying new files" -ForegroundColor Yellow
-robocopy $PSScriptRoot $Dest /E /XF .env node.json start_server.bat start_node.bat BACKUP-your-keys.env.txt `
-    /XD data accounts backups updates logs bin signals mt5-base mt5-base-building __pycache__ /NFL /NDL /NJH /NJS /NP | Out-Null
+robocopy $PSScriptRoot $Dest /E /XF .env node.json start_server.bat start_node.bat BACKUP-your-keys.env.txt .commit `
+    /XD data accounts backups updates logs bin signals mt5-base mt5-base-building __pycache__ .pytest_cache /NFL /NDL /NJH /NJS /NP | Out-Null
+
+# which GitHub commit is installed now (Admin -> System compares it with the latest); unknown after a zip update
+New-Item -ItemType Directory -Force -Path "$Dest\data" | Out-Null
+if (Test-Path "$PSScriptRoot\.commit") {
+    Copy-Item "$PSScriptRoot\.commit" "$Dest\data\installed-commit.txt" -Force
+    Write-Host "    installed commit $((Get-Content "$PSScriptRoot\.commit" -Raw).Trim())"
+} else {
+    Remove-Item "$Dest\data\installed-commit.txt" -ErrorAction SilentlyContinue
+}
 
 # Windows updates: install, but only restart at the weekend (PipsFarmer restarts the VPS on Saturday)
 New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Force | Out-Null

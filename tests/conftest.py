@@ -30,6 +30,8 @@ def _tmp_system_dirs(monkeypatch, tmp_path):
     monkeypatch.setattr(reports, "SIGNALS_DIR", tmp_path / "signals")
     from server import site_icon
     monkeypatch.setattr(site_icon, "CUSTOM_DIR", tmp_path / "data")
+    from server import github_update
+    monkeypatch.setattr(github_update, "DATA_DIR", tmp_path / "data")
 
 
 @pytest.fixture(scope="session")

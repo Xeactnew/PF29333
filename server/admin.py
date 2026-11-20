@@ -1,6 +1,7 @@
 """Admin pages: only accounts in the `admins` table can log in (create them with manage.py)."""
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import datetime, timedelta
 
@@ -903,8 +904,11 @@ def system_page(request: Request, s=Depends(db_session)):
     values = {k: get_setting(s, k) for k in keys}
     backups = sorted(system.BACKUP_DIR.glob("*.db"), key=lambda p: p.stat().st_mtime, reverse=True)[:12] \
         if system.BACKUP_DIR.exists() else []
+    from . import github_update as gh
     return render(request, "admin/system.html", _ctx(
         admin, version=system.VERSION, update_log=system.update_log(), tunnel=system.tunnel_status(),
+        gh_hint=gh.token_hint(), gh_check=gh.last_check(), gh_error=gh.last_error(),
+        gh_installed=gh.installed_commit(), gh_repo=gh.REPO,
         public_url=runtime.public_url(), values=values, backups=backups, is_windows=system.IS_WINDOWS,
         server_log=system.tail(system.LOG_DIR / "server.log", 80), admins=list(s.scalars(select(Admin))),
         icon_v=_icon_version(), icon_custom=_icon_custom(), protection=_protection(s)))
@@ -953,6 +957,60 @@ async def system_update(request: Request, s=Depends(db_session)):
     return render(request, "message.html", {"title": "Updating PipsFarmer",
                                             "text": "The site restarts in about a minute. Refresh this page then. "
                                                     "Other VPS update themselves within a few minutes after that."})
+
+
+@router.post("/system/github/token")
+async def system_github_token(request: Request, s=Depends(db_session)):
+    admin = current_admin(request, s)
+    form = await form_data(request)
+    from . import github_update as gh
+    if form.get("action") == "remove":
+        gh.remove_token()
+        services.log(s, "github_token_removed", None, "", admin.username)
+        s.commit()
+        flash(request, "GitHub token removed.")
+        return redirect("/admin/system")
+    err = gh.save_token(str(form.get("token", "")))
+    if err:
+        flash(request, err, "err")
+        return redirect("/admin/system")
+    services.log(s, "github_token_saved", None, "", admin.username)
+    s.commit()
+    flash(request, "GitHub token saved. Press “Check for updates” to try it.")
+    return redirect("/admin/system")
+
+
+@router.post("/system/github/check")
+async def system_github_check(request: Request, s=Depends(db_session)):
+    current_admin(request, s)
+    await form_data(request)
+    from . import github_update as gh
+    try:
+        c = await asyncio.to_thread(gh.check)
+        flash(request, f"Latest on GitHub: {c['short']}. " + ("A new version is ready." if c["new"] else "You're up to date."))
+    except Exception as e:  # noqa: BLE001
+        flash(request, f"Couldn't check GitHub: {e}", "err")
+    return redirect("/admin/system")
+
+
+@router.post("/system/github/install")
+async def system_github_install(request: Request, s=Depends(db_session)):
+    admin = current_admin(request, s)
+    form = await form_data(request)
+    from . import github_update as gh
+    sha = str(form.get("sha", "")).strip() or None
+    try:
+        sha = await asyncio.to_thread(gh.install, sha, admin.username)
+    except Exception as e:  # noqa: BLE001
+        flash(request, f"Update not started: {e}", "err")
+        return redirect("/admin/system")
+    services.log(s, "update_started", None, f"github {sha[:7]}", admin.username)
+    s.commit()
+    notify.send_admins(f"⬆️ {admin.username} started an update from GitHub (commit {sha[:7]}). The site is back "
+                       f"in about a minute; other VPS update themselves after that.")
+    return render(request, "message.html", {"title": "Updating PipsFarmer",
+                                            "text": f"Installing commit {sha[:7]} from GitHub. The site restarts in "
+                                                    "about a minute. Refresh this page then."})
 
 
 @router.post("/system/icon")

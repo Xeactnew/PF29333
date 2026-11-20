@@ -21,7 +21,8 @@ HELP = (
     "/pnl: closed P&L today (or /pnl week, /pnl month, /pnl all)\n"
     "/positions: every open trade right now\n"
     "/account <login or username>: one account in detail\n"
-    "/signals: the signals log as an Excel file (a tab per channel)\n\n"
+    "/signals: the signals log as an Excel file (a tab per channel)\n"
+    "/update: check GitHub for a new version and install it\n\n"
     "Copied = trades PipsFarmer placed. Total = everything on the account, "
     "including trades the customer placed themselves. \"Today\" is the broker's trading day, like in MT5."
 )

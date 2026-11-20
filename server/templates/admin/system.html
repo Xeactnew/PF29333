@@ -17,6 +17,38 @@
   {% if update_log %}<h3 style="margin-top:18px">Last update</h3><pre class="log">{{ update_log }}</pre>{% endif %}
 </section>
 
+<section class="panel" id="github">
+  <h2>Update from GitHub</h2>
+  <p class="muted">Install the latest version straight from <code>{{ gh_repo }}</code> (main branch), no zip needed. Uses the same safe install as an upload: database backed up first, trades stay open.</p>
+  <p>Installed: <span class="pill plain mono">v{{ version }}</span> <span class="pill plain mono">{{ gh_installed[:7] if gh_installed else "commit unknown" }}</span></p>
+  {% if gh_hint %}
+    <p class="muted">GitHub token: <b>saved</b> <span class="mono">····{{ gh_hint }}</span></p>
+    <div class="actions">
+      <form method="post" action="/admin/system/github/check">{{ m.csrf_field(csrf) }}<button class="btn" type="submit">Check for updates</button></form>
+      <form method="post" action="/admin/system/github/token">{{ m.csrf_field(csrf) }}<input type="hidden" name="action" value="remove"><button class="btn" type="submit" data-confirm="Remove the saved GitHub token?">Remove token</button></form>
+    </div>
+    {% if gh_error %}<p class="flash err" style="margin-top:10px">{{ gh_error }}</p>{% endif %}
+    {% if gh_check %}
+      <table style="margin-top:12px">
+        <tr><td>Latest on main</td><td class="mono">{{ gh_check.short }}{% if gh_check.version %} · v{{ gh_check.version }}{% endif %}</td></tr>
+        {% if gh_check.date %}<tr><td>Date</td><td>{{ gh_check.date[:16].replace("T", " ") }} UTC</td></tr>{% endif %}
+        {% if gh_check.message %}<tr><td>Change</td><td>{{ gh_check.message }}</td></tr>{% endif %}
+      </table>
+      <form method="post" action="/admin/system/github/install" style="margin-top:12px">
+        {{ m.csrf_field(csrf) }}<input type="hidden" name="sha" value="{{ gh_check.sha }}">
+        <button class="btn {{ 'primary' if gh_check.new }}" type="submit" data-confirm="Install commit {{ gh_check.short }} from GitHub now?" {{ 'disabled' if not is_windows }}>{{ "Install update" if gh_check.new else "Reinstall this version" }}</button>
+      </form>
+    {% endif %}
+  {% else %}
+    <p class="muted" style="font-size:13px">On GitHub: <b>Settings → Developer settings → Fine-grained tokens → Generate</b>. Repository access: only <code>{{ gh_repo }}</code>. Permissions: <b>Contents: Read-only</b>. Paste it here once; it's stored encrypted and never shown again.</p>
+  {% endif %}
+  <form method="post" action="/admin/system/github/token" style="margin-top:12px">
+    {{ m.csrf_field(csrf) }}
+    <div class="field"><label for="ght">{{ "Replace the token" if gh_hint else "GitHub token" }}</label><input id="ght" name="token" type="password" autocomplete="off" placeholder="github_pat_…"></div>
+    <button class="btn" type="submit">Save token</button>
+  </form>
+</section>
+
 <section class="panel">
   <h2>Restart protection</h2>
   <p class="muted">What brings this VPS back by itself after a restart, a crash or a power cut. After a restart the bot tells you when everything is back.</p>
