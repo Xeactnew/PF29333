@@ -22,7 +22,19 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
   - `telegram_service.py`: reads VIP chats, per-chat identity (Signal.tg_chat_id + channel), edits and replies.
   - `services.py`: signals, updates → Events for accounts; groups (`signal_groups`, `group_stats`, `group_rule`).
   - `customer.py` / `admin.py`: pages. `templates/`, `assets_src/` (readable CSS/JS) → `static/` (minified, served).
-  - `plans.py`: account settings defaults, validation, plan limits (`effective_settings`).
+  - `plans.py`: account settings defaults, validation, plan limits (`effective_settings`). `max_open_lots` (0 = off)
+    caps lots open + pending + waiting per account; the worker trims a layer to fit or skips it, with a note.
+  - `customer_alerts.py`: customers' Telegram trade alerts (opened once per signal, partials, closed + today's
+    total, stop to entry, signal not taken + why, MT5 / password / Algo Trading problems with a grace period,
+    optional daily summary at their local time). Built in `api.py` from new deals and the worker report *after*
+    the worker's data is committed. Unique `key` per alert (never sent twice), 40/hour cap, the bot sends
+    3 per chat per pass with retries; linked from Plan & login via `/start c<code>`, `/stop` unlinks.
+  - `github_update.py`: Admin → System "Update from GitHub" + `/update` in the admin bot. The owner pastes a
+    read-only token (stored Fernet-encrypted, shown only as last 4). Downloads main, re-roots to `pipsfarmer/`,
+    then the same `stage_update` → backup → `run_update` path as an uploaded zip. certifi, else PowerShell
+    fallback with the token in an env var. Installed sha: `data\installed-commit.txt` (written by update_vps.ps1).
+  - Channels page never waits on Telegram: `telegram_service.dialogs_for_page` (cache, background refresh,
+    2.5 s wait, clear loading/error states).
 - `node/`: runs on each VPS. `node_agent.py` manages one `worker.py` per account (portable MT5 copied from the
   ready-made `C:\PipsFarmer\mt5-base`), shares the broker list, self-updates. `worker.py` places and manages trades
   (layers, instant entries, breakeven, partials, levels, daily limits, news, one-trade-per-idea, min SL, typo guard,
@@ -31,11 +43,12 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
 - `update_vps.ps1` / `setup_vps.ps1`: install/update on Windows (robocopy; keeps data, accounts, logs, signals, mt5-base).
 
 ## Working on it
-- Tests: `python -m pytest -q` (all must pass; currently 112). Worker tests use `tests/fake_mt5.py`.
+- Tests: `python -m pytest -q` (all must pass; currently 136). Worker tests use `tests/fake_mt5.py`.
 - Before packaging: `python tools/build_assets.py [path-to-esbuild]` (needs esbuild; icons need Chrome + playwright).
 - Version lives in three places: `server/system.py`, `node/worker.py`, `node/node_agent.py` (`VERSION = "x.y.z"`).
-- Release: zip the folder as `pipsfarmer/…` → the owner sends it to the Telegram admin bot and taps Install
-  (or Admin → System → upload). The node self-updates from the website.
+- Release: push to `main`, then the owner uses **Update from GitHub** (Admin → System → Check for updates →
+  Install, or `/update` in the admin bot). A zip of the folder as `pipsfarmer/…` still works too: send it to the
+  Telegram admin bot and tap Install (or Admin → System → upload). The node self-updates from the website.
 
 ## On the VPS (C:\PipsFarmer)
 - `data\pipsfarmer.db` (+ -wal), `logs\server.log` (VIP messages logged with result; ignored ones with their text),
@@ -46,4 +59,7 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
 ## Known open items
 - The owner's own relay posts "Pips Farmer VIP" (re-posts KD a minute later, sometimes with a no-SL zone 100 too low).
 - Admin: untick the "Pips Farmer" highlights group and "H and Savreena 💍" as VIP groups.
-- Email (Gmail app password), key backup, legal pages, Channels page tidy-up, trade alerts to customers.
+- Email (Gmail app password), key backup, legal pages.
+- 1.3.23 was built where esbuild/Node weren't installed: `static/style.css` used build_assets' fallback minifier
+  and the one new line in `static/app.js` was added by hand. Run `python tools/build_assets.py` with esbuild next release.
+- The GitHub download, its PowerShell certificate fallback and customer alerts are only tested with fakes so far.
