@@ -747,19 +747,69 @@ async def channels_page(request: Request, s=Depends(db_session)):
     user = current_user(request, s)
     max_ch = int(feature(user.plan.features, "max_channels") or 0)
     mine = list(s.scalars(select(Source).where(Source.kind == "channel", Source.owner_user_id == user.id,
-                                               Source.active.is_(True))))
-    dialogs, dialog_error = [], None
+                                               Source.active.is_(True)).order_by(Source.title)))
+    dialogs, tg_state = [], "none"
     if user.tg_session_enc and max_ch:
-        try:
-            dialogs = await tg.list_user_dialogs(user.id, security.decrypt(user.tg_session_enc))
-        except Exception as e:  # noqa: BLE001
-            dialog_error = f"Couldn't load your Telegram chats: {e}"
+        # never wait on Telegram for long: cached chats straight away, a fresh list loads in the background
+        dialogs, tg_state = await tg.dialogs_for_page(user.id, security.decrypt(user.tg_session_enc))
     have = {src.tg_chat_id for src in mine}
+    main = main_source(s)
+    accounts = _live(user)
+    cards = _channel_cards(s, [main] + mine, accounts)
+    linked = bool(user.tg_session_enc)
+    steps = [("Link your Telegram", "#link", linked),
+             ("Pick the channels to copy", "#pick", bool(mine)),
+             ("Choose which accounts copy each one", "#copying", any(c["accounts"] for c in cards[1:]))]
     return render(request, "channels.html", {"user": user, "max_channels": max_ch, "mine": mine,
                                              "dialogs": [d for d in dialogs if d["id"] not in have],
-                                             "dialog_error": dialog_error,
+                                             "tg_state": tg_state, "tg_error": tg.dialog_error(user.id),
+                                             "reader_on": tg.reader_connected(user.id),
                                              "pending_phone": tg.pending_login_phone(user.id),
-                                             "main": main_source(s)})
+                                             "main": main, "cards": cards, "accounts": accounts,
+                                             "steps": steps, "linked": linked})
+
+
+def _channel_cards(s, sources: list[Source], accounts: list[Account]) -> list[dict]:
+    """Status, last call, calls this week and which accounts copy it, for each channel (database only)."""
+    ids = [src.id for src in sources]
+    week = utcnow() - timedelta(days=7)
+    counts = dict(s.execute(select(Signal.source_id, func.count(Signal.id))
+                            .where(Signal.source_id.in_(ids or [-1]), Signal.created_at >= week)
+                            .group_by(Signal.source_id)).all())
+    acc_by_id = {a.id: a for a in accounts}
+    follows: dict[int, list] = {i: [] for i in ids}
+    from .db import AccountSource
+    for acc_id, src_id in s.execute(select(AccountSource.account_id, AccountSource.source_id)
+                                    .where(AccountSource.source_id.in_(ids or [-1]),
+                                           AccountSource.account_id.in_(list(acc_by_id) or [-1]))):
+        follows[src_id].append(acc_by_id[acc_id])
+    out = []
+    for src in sources:
+        last = s.scalar(select(Signal).where(Signal.source_id == src.id).order_by(Signal.id.desc()).limit(1))
+        out.append({"src": src, "last": last, "week": counts.get(src.id, 0),
+                    "accounts": follows.get(src.id, []), "main": src.kind == "main"})
+    return out
+
+
+@router.post("/channels/copying")
+async def channels_copying(request: Request, s=Depends(db_session)):
+    """Which accounts copy each channel, from the Channels page (the VIP group included)."""
+    user = current_user(request, s)
+    form = await form_data(request)
+    managed = [main_source(s).id] + [src.id for src in s.scalars(select(Source).where(
+        Source.kind == "channel", Source.owner_user_id == user.id, Source.active.is_(True)))]
+    for acc in _live(user):
+        keep = set(services.account_source_ids(s, acc.id)) - set(managed)
+        for sid in managed:
+            vals = form.get(f"c{sid}", [])
+            vals = vals if isinstance(vals, list) else [vals]
+            if str(acc.id) in [str(v) for v in vals]:
+                keep.add(sid)
+        services.set_account_sources(s, acc, list(keep))
+    services.log(s, "channel_accounts_saved", user.id, "", user.username)
+    s.commit()
+    flash(request, "Saved. The next call from each channel goes to the accounts you ticked.")
+    return redirect("/channels#copying")
 
 
 @router.post("/channels/telegram/start")

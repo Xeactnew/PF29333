@@ -401,17 +401,77 @@ async def list_user_dialogs(user_id: int, session_str: str, client=None) -> list
     temp = None
     if not client:
         temp = client = _new_client(session_str)
-        await client.connect()
+        await asyncio.wait_for(client.connect(), 15)
     try:
         out = []
-        async for d in client.iter_dialogs(limit=300):
-            if d.is_channel or d.is_group:
-                out.append({"id": d.id, "title": d.name or str(d.id)})
+
+        async def collect():
+            async for d in client.iter_dialogs(limit=300):
+                if d.is_channel or d.is_group:
+                    out.append({"id": d.id, "title": d.name or str(d.id)})
+        await asyncio.wait_for(collect(), 30)
         _dialog_cache[user_id] = (time.time(), out)
+        _dialog_errors.pop(user_id, None)
         return out
     finally:
         if temp:
             await temp.disconnect()
+
+
+_dialog_tasks: dict[int, asyncio.Task] = {}
+_dialog_errors: dict[int, tuple[float, str]] = {}
+
+
+def _refresh_dialogs(user_id: int, session_str: str) -> asyncio.Task:
+    task = _dialog_tasks.get(user_id)
+    if task is None or task.done():
+        task = asyncio.get_running_loop().create_task(list_user_dialogs(user_id, session_str))
+
+        def done(t: asyncio.Task):
+            if not t.cancelled() and t.exception() is not None:
+                e = t.exception()
+                _dialog_errors[user_id] = (time.time(), "Telegram took too long to answer"
+                                           if isinstance(e, asyncio.TimeoutError) else str(e)[:200])
+        task.add_done_callback(done)
+        _dialog_tasks[user_id] = task
+    return task
+
+
+async def dialogs_for_page(user_id: int, session_str: str, wait: float = 2.5) -> tuple[list[dict], str]:
+    """The customer's Telegram chats for the Channels page, without ever making the page hang.
+    Returns (chats, state): "ok", "stale" (last known list while a fresh one loads), "loading", "error",
+    or "unavailable" (Telegram isn't set up on this server)."""
+    if not api_ready():
+        return [], "unavailable"
+    cached = _dialog_cache.get(user_id)
+    if cached and time.time() - cached[0] < 120:
+        return cached[1], "ok"
+    err = _dialog_errors.get(user_id)
+    task = _dialog_tasks.get(user_id)
+    if err and time.time() - err[0] < 30 and (task is None or task.done()):
+        return (cached[1] if cached else []), "error"         # failed a moment ago: don't hammer Telegram
+    task = _refresh_dialogs(user_id, session_str)
+    if cached:
+        return cached[1], "stale"
+    try:
+        return await asyncio.wait_for(asyncio.shield(task), wait), "ok"
+    except asyncio.TimeoutError:
+        return [], "loading"
+    except Exception:  # noqa: BLE001
+        return [], "error"
+
+
+def dialog_error(user_id: int) -> str:
+    e = _dialog_errors.get(user_id)
+    return e[1] if e else ""
+
+
+def reader_connected(user_id: int) -> bool:
+    c = _user_clients.get(user_id)
+    try:
+        return bool(c is not None and c.is_connected())
+    except Exception:  # noqa: BLE001
+        return False
 
 
 # ------------------------------------------------------------ admin bot (Bot API)

@@ -167,7 +167,7 @@ tr.link-row:hover td { background: rgba(var(--c2-rgb),.06); }
 
 /* ---- forms ---- */
 label { display: block; font-size: 13.5px; color: var(--straw-dim); margin-bottom: 5px; }
-input[type=text], input[type=password], input[type=number], input[type=email], input[type=date], input[type=tel], select, textarea {
+input[type=text], input[type=password], input[type=number], input[type=email], input[type=date], input[type=time], input[type=tel], select, textarea {
   width: 100%; background: rgba(var(--deep-rgb),.75); color: var(--straw); border: 1px solid var(--furrow); border-radius: var(--r-ctl);
   padding: 9px 12px; font: inherit; transition: border-color .15s, box-shadow .15s; }
 input::placeholder, textarea::placeholder { color: #6e6656; }
@@ -525,6 +525,7 @@ a, button, .tab { -webkit-tap-highlight-color: transparent; }
   .deck-dots i.on { width: 18px; background: var(--gilt); }
 }
 .switch span { display: block; }
+.switch small { display: block; color: var(--straw-dim); font-size: 12.5px; line-height: 1.35; margin-top: 2px; }
 .switch { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; cursor: pointer; }
 .switch input[type="checkbox"] { appearance: none; -webkit-appearance: none; width: 38px; min-width: 38px; max-width: 38px; height: 22px;
   min-height: 0; padding: 0; border-radius: 6px; background: var(--pine); box-shadow: none;
@@ -586,6 +587,16 @@ details.sec .sec-body { padding: 12px 14px 14px; }
 .arow small { display: block; }
 .arow .r { text-align: right; }
 .scroll-list { max-height: 420px; overflow-y: auto; }
+/* Channels page: two figures per card, tick-chips for which accounts copy a channel, the chat picker */
+.gnums.two { grid-template-columns: 1fr 1fr; }
+.chip-picks { flex-wrap: wrap; margin-top: 12px; }
+.chip-picks .chip { cursor: pointer; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; }
+.chip-picks .chip input { position: absolute; opacity: 0; pointer-events: none; }
+.chip-picks .chip:has(input:checked) { color: var(--on-grad); background: var(--grad); border-color: transparent; }
+.chip-picks .chip:has(input:checked)::before { content: "✓"; font-size: 12px; }
+.chip-picks .chip:has(input:focus-visible) { outline: 2px solid var(--c1); outline-offset: 2px; }
+.grow.pick { grid-template-columns: 1fr auto; }
+.grow.pick span { min-width: 0; overflow-wrap: anywhere; }
 @media (max-width: 700px) { .totals { grid-template-columns: repeat(2, 1fr); gap: 14px; } }
 .setup { margin-bottom: 18px; border-color: rgba(var(--gilt-rgb),.45); }
 .steps { list-style: none; counter-reset: st; margin: 0; padding: 0; }
