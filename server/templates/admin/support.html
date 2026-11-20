@@ -1,0 +1,19 @@
+{% extends "admin/base.html" %}
+{% block title %}Support{% endblock %}
+{% block content %}
+<div class="pagehead"><div><span class="eyebrow">// support</span><h1>Support</h1>
+  <p>Questions from customers and the public help form. Each one is also emailed to <b>{{ support_email or "(no support email set)" }}</b>{% if not mail_ok %} once email is set up in <a href="/admin/settings#email">Settings</a>{% endif %}.</p></div>
+  <div class="actions">{% for k, l in [("open", "Waiting for us"), ("answered", "Answered"), ("all", "All")] %}<a class="btn small {{ 'primary' if show == k }}" href="?show={{ k }}">{{ l }}</a>{% endfor %}</div></div>
+<section class="panel">
+  <div class="table-wrap"><table>
+    <tr><th>#</th><th>From</th><th>Subject</th><th>Status</th><th>Updated</th></tr>
+    {% for t in tickets %}
+    <tr data-href="/admin/support/{{ t.id }}"><td class="mono">{{ t.id }}</td>
+      <td>{% if t.user %}<a href="/admin/users/{{ t.user.id }}">{{ t.user.username }}</a>{% else %}{{ t.name }} <small>(not logged in)</small>{% endif %}</td>
+      <td><a href="/admin/support/{{ t.id }}">{{ t.subject }}</a></td>
+      <td><span class="pill {{ {'open': 'waiting', 'answered': 'online', 'closed': 'plain'}[t.status] }}">{{ t.status }}</span></td>
+      <td><small>{{ t.updated_at|ago }}</small></td></tr>
+    {% else %}<tr><td colspan="5" class="muted">Nothing here. 🎉</td></tr>{% endfor %}
+  </table></div>
+</section>
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends "admin/base.html" %}
+{% block title %}Support #{{ t.id }}{% endblock %}
+{% block content %}
+<div class="pagehead"><div><span class="eyebrow">// support #{{ t.id }}</span><h1>{{ t.subject }}</h1>
+  <p>{% if t.user %}<a href="/admin/users/{{ t.user.id }}">{{ t.user.username }}</a> ({{ t.user.plan.name }}){% else %}{{ t.name }}, not logged in{% endif %} · {{ t.email or "no email" }} · <a href="/admin/support">all tickets</a></p></div>
+  <form method="post" action="/admin/support/{{ t.id }}">{{ m.csrf_field(csrf) }}
+    {% if t.status != "closed" %}<button class="btn small" name="action" value="close">Close</button>{% else %}<button class="btn small" name="action" value="reopen">Reopen</button>{% endif %}</form></div>
+<section class="panel">
+  <div class="thread">
+    {% for msg in t.messages %}
+    <div class="msg {{ 'staff' if msg.author != 'customer' }}"><div class="who">{{ (t.user.username if t.user else t.name) if msg.author == "customer" else msg.author }} · {{ msg.created_at|date("%d %b %H:%M") }} UTC</div><div class="body">{{ msg.body }}</div></div>
+    {% endfor %}
+  </div>
+  <form method="post" action="/admin/support/{{ t.id }}" style="margin-top:18px;max-width:760px">
+    {{ m.csrf_field(csrf) }}
+    <div class="field"><label for="ms">Reply</label><textarea id="ms" name="message" rows="5" required></textarea>
+      <div class="hint">{% if t.email and mail_ok %}Emailed to {{ t.email }} and shown on their Support page.{% elif t.email %}Shown on their Support page. Set up email in Settings to email it too.{% else %}Shown on their Support page (no email on file).{% endif %}</div></div>
+    <div class="actions"><button class="btn primary" type="submit">Send reply</button>
+      <label class="check" style="margin:0"><input type="checkbox" name="close" value="1"> <span>and close it</span></label></div>
+  </form>
+</section>
+{% endblock %}

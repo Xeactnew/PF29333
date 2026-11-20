@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+{% block title %}{{ acc.label or acc.login }} | {{ site }}{% endblock %}
+
+{% macro num(key, label, step="0.01", hint="", lot=None) -%}
+<div class="field" {% if lot %}data-lot="{{ lot }}"{% endif %}>
+  <label for="s-{{ key }}">{{ label }}</label>
+  <input id="s-{{ key }}" name="{{ key }}" type="number" step="{{ step }}" min="0" value="{{ settings[key] }}" {{ 'disabled' if key in locked }}>
+  {% if hint %}<div class="hint">{{ hint }}</div>{% endif %}
+</div>
+{%- endmacro %}
+{% macro chk(key, label) -%}
+<label class="check"><input type="checkbox" name="{{ key }}" {{ 'checked' if settings[key] }} {{ 'disabled' if key in locked }}> <span>{{ label }}</span></label>
+{%- endmacro %}
+{% macro lock(keys) -%}
+{% if keys|select("in", locked)|list %}<p class="lock-note">Part of a higher plan. <a href="/plan">See plans</a></p>{% endif %}
+{%- endmacro %}
+
+{% block content %}
+{% set cur = acc.currency %}
+<div class="pagehead">
+  <div>
+    <h1>{{ acc.label or acc.login }}</h1>
+    <p>{{ acc.login }} on {{ acc.server }}{% if acc.broker %}, {{ acc.broker }}{% endif %} &nbsp;{{ m.status(acc) }}</p>
+  </div>
+  <div class="actions">
+    <form class="inline" method="post" action="/accounts/{{ acc.id }}/toggle">{{ m.csrf_field(csrf) }}
+      <button class="btn {{ '' if acc.copy_enabled else 'primary' }}" type="submit">{{ "Pause copying" if acc.copy_enabled else "Start copying" }}</button></form>
+    <form class="inline" method="post" action="/accounts/{{ acc.id }}/close-all">{{ m.csrf_field(csrf) }}
+      <button class="btn danger" type="submit" data-confirm="Close every {{ site }} trade and pending order on this account now?">Close all trades</button></form>
+  </div>
+</div>
+
+{% if acc.conn_status == "waiting" %}
+<div class="flash warn">All our servers are full right now. You're number {{ queue_pos }} in the queue, and this account will connect by itself as soon as a slot frees up. Your settings below are saved and ready.</div>
+{% elif acc.conn_status == "starting" %}
+<div class="flash ok">Starting MT5 and logging in. This usually takes under a minute. Refresh to check.</div>
+{% elif acc.conn_status == "error" %}
+<div class="flash err">MT5 couldn't connect: {{ acc.conn_error }}. Check your password and server below.</div>
+{% endif %}
+{% if live.blocked %}<div class="flash warn">Not taking new trades right now: {{ live.blocked }}</div>{% endif %}
+
+<div class="panel"><div class="figures">
+  <div><span>Balance</span><b class="num">{{ acc.balance|money(cur) }}</b></div>
+  <div><span>Equity</span><b class="num">{{ acc.equity|money(cur) }}</b></div>
+  <div><span>Today</span><b>{{ m.pnl(live.day_pnl or 0, cur) }}</b></div>
+  <div><span>This week</span><b>{{ m.pnl(stats.periods.week, cur) }}</b></div>
+  <div><span>This month</span><b>{{ m.pnl(stats.periods.month, cur) }}</b></div>
+  <div><span>Win rate</span><b class="num">{{ stats.win_rate }}%</b></div>
+</div></div>
+
+<div class="grid g2" style="margin-top:18px">
+  <section class="panel">
+    <div class="panel-head"><h2>Balance and equity</h2><small>Last 30 days. Gold is equity, dashed is balance.</small></div>
+    <svg class="line" data-line='{{ curve|tojson }}' role="img" aria-label="Balance and equity chart"></svg>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>Open now</h2><small>{% if acc.last_report %}Updated {{ acc.last_report|ago }}{% endif %}</small></div>
+    {% set pos = live.positions or [] %}{% set pend = live.pendings or [] %}{% set wait = live.waiting or [] %}
+    {% if pos or pend or wait %}
+    <div class="table-wrap"><table>
+      <tr><th>Trade</th><th class="r">Lots</th><th class="r">Entry</th><th class="r">SL</th><th class="r">TP</th><th class="r">Profit</th></tr>
+      {% for p in pos %}<tr><td><span class="side {{ p.side }}">{{ p.side|capitalize }}</span> {{ p.symbol }}</td><td class="r num">{{ p.volume }}</td><td class="r num">{{ p.price|price }}</td><td class="r num">{{ p.sl|price }}</td><td class="r num">{{ p.tp|price }}</td><td class="r">{{ m.pnl(p.profit, cur) }}</td></tr>{% endfor %}
+      {% for p in pend %}<tr><td><span class="side {{ p.side }}">{{ p.side|capitalize }}</span> limit</td><td class="r num">{{ p.volume }}</td><td class="r num">{{ p.price|price }}</td><td class="r num">{{ p.sl|price }}</td><td class="r num">{{ p.tp|price }}</td><td class="r"><small>Pending</small></td></tr>{% endfor %}
+      {% for p in wait %}<tr><td><span class="side {{ p.side }}">{{ p.side|capitalize }}</span> smart entry</td><td class="r num">{{ p.volume }}</td><td class="r num">{{ p.price|price }}</td><td class="r num">{{ p.sl|price }}</td><td class="r num">{{ p.tp|price }}</td><td class="r"><small>Waiting for price</small></td></tr>{% endfor %}
+    </table></div>
+    {% else %}<p class="muted">No open {{ site }} trades on this account.</p>{% endif %}
+  </section>
+</div>
+
+{% if not settings.follow_updates %}
+<div class="flash warn" style="margin-top:18px">This account <b>ignores the groups' updates</b>: breakeven / risk-free, stop moves, partials and "close now" aren't applied, only the original stop and targets. Turn on <b>Follow the group's updates</b> under Managing trades below to have them copied.</div>
+{% endif %}
+{% if groups %}
+<section class="panel" id="groups" style="margin-top:18px">
+  <div class="panel-head"><h2>Signal groups</h2><small class="deck-count" data-deck-count>{{ groups|length }} group{{ 's' if groups|length != 1 }}</small></div>
+  <div class="gdeck" data-deck>
+  {% for g in groups %}
+    {% set blockers = g.checks|rejectattr(0)|list %}
+    {% set ready = not blockers %}
+    <article class="gcard {{ 'is-ready' if ready else 'is-held' }}" id="g-{{ g.key }}">
+      <div class="gtop">
+        <div><h3>{{ g.title }}</h3><small>{{ g.source if g.source and g.source != g.title else "Telegram group" }}</small></div>
+        <span class="tag {{ 'go' if ready else 'hold' }}">{{ "Armed" if ready else "On hold" }}</span>
+      </div>
+      <p class="gstate">{% if ready %}Copies this group's next call.{% else %}{{ blockers[0][2] or blockers[0][1] }}{% endif %}</p>
+      <ul class="gchecks">{% for done, what, why in g.checks %}<li class="{{ 'ok' if done else 'no' }}">{{ what }}</li>{% endfor %}</ul>
+      <p class="glast">{% if g.last %}Last call <b class="side {{ g.last.side }}">{{ g.last.side|capitalize }}</b> {{ g.last.symbol }} · {{ g.last.created_at|ago }}{% else %}No calls yet{% endif %}</p>
+      <dl class="gnums">
+        <div><dt>Calls</dt><dd class="num">{{ g.week.signals }}</dd></div>
+        <div><dt>Trades</dt><dd class="num">{{ g.week.trades }}</dd></div>
+        <div><dt>Win %</dt><dd class="num">{{ g.week.win_rate if g.week.trades else "—" }}</dd></div>
+        <div><dt>7 days</dt><dd>{{ m.pnl(g.week.pnl, cur) }}</dd></div>
+      </dl>
+      <p class="gsize">{% if g.cfg.own %}Own size: {% if g.cfg.lot_mode == "fixed" %}{{ g.cfg.fixed_lot }} lots{% elif g.cfg.lot_mode == "risk_percent" %}{{ g.cfg.risk_percent }}% risk{% else %}{{ g.cfg.risk_amount|money(cur) }} risk{% endif %} × {{ g.cfg.layers }} layer{{ 's' if g.cfg.layers != 1 }}{% else %}Account trade settings{% endif %}</p>
+      <details class="gedit">
+        <summary>Settings for this group</summary>
+        <form method="post" action="/accounts/{{ acc.id }}/groups/{{ g.key }}">{{ m.csrf_field(csrf) }}
+          <label class="switch"><input type="checkbox" name="trading" {{ '' if g.cfg.paused else 'checked' }}> <span>Trading<small>Off: you still see its signals, nothing is placed</small></span></label>
+          <label class="switch"><input type="checkbox" name="own" {{ 'checked' if g.cfg.own }} data-reveal> <span>Own trade size for this group<small>Off: uses the account settings below</small></span></label>
+          <div class="fields reveal">
+            <div class="field"><label>Trade size</label>
+              <select name="lot_mode" {{ 'disabled' if 'lot_mode' in locked }}>
+                {% for v, l in [("fixed", "A fixed lot size"), ("risk_percent", "% of balance per signal"), ("risk_amount", "Fixed money per signal")] %}<option value="{{ v }}" {{ 'selected' if (g.cfg.lot_mode or settings.lot_mode) == v }}>{{ l }}</option>{% endfor %}
+              </select></div>
+            <div class="field"><label>Lots per layer</label><input name="fixed_lot" type="number" step="0.01" min="0.01" value="{{ g.cfg.fixed_lot or settings.fixed_lot }}"></div>
+            <div class="field"><label>Risk %</label><input name="risk_percent" type="number" step="0.1" min="0.01" value="{{ g.cfg.risk_percent or settings.risk_percent }}" {{ 'disabled' if 'risk_percent' in locked }}></div>
+            <div class="field"><label>Risk ({{ cur or "money" }})</label><input name="risk_amount" type="number" step="1" min="0.01" value="{{ g.cfg.risk_amount or settings.risk_amount }}" {{ 'disabled' if 'risk_amount' in locked }}></div>
+            <div class="field"><label>Layers</label><input name="layers" type="number" min="1" max="{{ max_layers }}" step="1" value="{{ g.cfg.layers or settings.layers }}"></div>
+            <div class="field"><label>Take profits</label>
+              <select name="tp_target" {{ 'disabled' if 'tp_target' in locked }}>
+                {% for v, l in [("spread", "Spread across TP1, TP2, TP3"), ("tp1", "All at TP1"), ("tp2", "All at TP2"), ("tp3", "All at TP3"), ("last", "All at the last TP")] %}<option value="{{ v }}" {{ 'selected' if (g.cfg.tp_target or settings.tp_target) == v }}>{{ l }}</option>{% endfor %}
+              </select></div>
+          </div>
+          <div class="row-btns"><button class="btn primary" type="submit">Save changes</button>
+            {% if g.cfg %}<button class="btn" type="submit" name="action" value="reset">Back to account settings</button>{% endif %}</div>
+        </form>
+      </details>
+    </article>
+  {% endfor %}
+  </div>
+  {% if groups|length > 1 %}<div class="deck-dots" data-deck-dots aria-hidden="true">{% for g in groups %}<i class="{{ 'on' if loop.first }}"></i>{% endfor %}</div>{% endif %}
+</section>
+{% endif %}
+
+<div class="grid g-side" style="margin-top:18px">
+<section class="panel">
+  <h2>Trade settings</h2>
+  <p class="muted">Tap a section to change it. Trades already open keep their stop and targets.</p>
+  <form method="post" action="/accounts/{{ acc.id }}/settings">
+    {{ m.csrf_field(csrf) }}
+    <details class="sec">
+      <summary><b>Which signals it takes</b><small>{{ followed|length }} source{{ "s" if followed|length != 1 }} · {{ {"both": "buys and sells", "buy": "buys only", "sell": "sells only"}[settings.directions] }}</small></summary>
+      <div class="sec-body">
+      <p class="about">Signals come from the groups you tick. Add more channels on the Channels page (Pro and Extreme).</p>
+      {% for s in sources %}<label class="check"><input type="checkbox" name="sources" value="{{ s.id }}" {{ 'checked' if s.id in followed }}> <span>{{ s.title }}</span></label>{% endfor %}
+      <div class="fields">
+        <div class="field"><label for="s-directions">Directions</label>
+          <select id="s-directions" name="directions" {{ 'disabled' if 'directions' in locked }}>
+            {% for v, l in [("both", "Buys and sells"), ("buy", "Buys only"), ("sell", "Sells only")] %}<option value="{{ v }}" {{ 'selected' if settings.directions == v }}>{{ l }}</option>{% endfor %}
+          </select></div>
+        {{ num("max_sl_pips", "Skip if SL is more than (pips)", "1", "0 takes any size") }}
+        {{ num("max_spread_pips", "Skip if spread is above (pips)", "0.1", "0 means no limit") }}
+        {{ num("max_open_signals", "Max signals open at once", "1", "0 means no limit") }}
+        <div class="field"><label for="s-ss">Trade from (broker time)</label><input id="s-ss" name="session_start" type="text" value="{{ settings.session_start }}" pattern="\d{1,2}:\d{2}" {{ 'disabled' if 'session_start' in locked }}></div>
+        <div class="field"><label for="s-se">Trade until (broker time)</label><input id="s-se" name="session_end" type="text" value="{{ settings.session_end }}" pattern="\d{1,2}:\d{2}" {{ 'disabled' if 'session_end' in locked }}></div>
+      </div>
+      {{ chk("skip_if_tp1_passed", "Skip a signal if price has already reached TP1") }}
+      {{ chk("one_trade_per_idea", "One trade per idea: if two of your groups post the same call (a re-post with a slightly different zone), take it once") }}
+      {{ chk("require_tp", "Skip calls that come with no take profit") }}
+      <div class="fields">
+        {{ num("min_sl_pips", "Skip if SL is tighter than (pips)", "1", "Stops this small get hit by the spread. 0 takes any") }}
+        {{ num("max_entry_away_pct", "Skip if entry is further than (% from price)", "0.1", "Catches typos like 3616 for 3716. 0 turns it off") }}
+      </div>
+      {{ lock(["directions", "max_sl_pips"]) }}
+      </div>
+    </details>
+
+    <details class="sec">
+      <summary><b>Risk</b><small>{% if settings.lot_mode == "fixed" %}{{ settings.fixed_lot }} lots per layer{% elif settings.lot_mode == "risk_percent" %}{{ settings.risk_percent }}% per signal{% else %}{{ settings.risk_amount|money(cur) }} per signal{% endif %}</small></summary>
+      <div class="sec-body">
+      <div class="fields">
+        <div class="field"><label for="s-lot_mode">Lot size</label>
+          <select id="s-lot_mode" name="lot_mode" {{ 'disabled' if 'lot_mode' in locked }}>
+            {% for v, l in [("fixed", "Fixed lots per layer"), ("risk_percent", "% of balance per signal"), ("risk_amount", "Fixed money per signal")] %}<option value="{{ v }}" {{ 'selected' if settings.lot_mode == v }}>{{ l }}</option>{% endfor %}
+          </select></div>
+        {{ num("fixed_lot", "Lots per layer", "0.01", "", "fixed") }}
+        {{ num("risk_percent", "Risk per signal (%)", "0.1", "Lost if every layer hits SL", "risk_percent") }}
+        {{ num("risk_amount", "Risk per signal (" ~ (cur or "money") ~ ")", "1", "Lost if every layer hits SL", "risk_amount") }}
+        {{ num("max_lot", "Largest lot per order", "0.01", "Safety cap") }}
+      </div>
+      {{ lock(["lot_mode"]) }}
+      </div>
+    </details>
+
+    <details class="sec">
+      <summary><b>Entries and layers</b><small>{{ settings.layers }} layer{{ "s" if settings.layers != 1 }} · {{ {"spread": "TPs spread", "tp1": "all at TP1", "tp2": "all at TP2", "tp3": "all at TP3", "last": "all at last TP"}[settings.tp_target] }}{{ " · smart entry" if settings.smart_entry }}</small></summary>
+      <div class="sec-body">
+      <p class="about">Layers split one signal into several orders spread across the entry zone.</p>
+      <div class="fields">
+        <div class="field"><label for="s-layers">Layers</label><input id="s-layers" name="layers" type="number" min="1" max="{{ max_layers }}" step="1" value="{{ settings.layers }}" {{ 'disabled' if 'layers' in locked }}>
+          <div class="hint">Your plan allows up to {{ max_layers }}.</div></div>
+        <div class="field"><label for="s-tp">Take profit for each layer</label>
+          <select id="s-tp" name="tp_target" {{ 'disabled' if 'tp_target' in locked }}>
+            {% for v, l in [("spread", "Spread across TP1, TP2, TP3"), ("tp1", "All at TP1"), ("tp2", "All at TP2"), ("tp3", "All at TP3"), ("last", "All at the last TP")] %}<option value="{{ v }}" {{ 'selected' if settings.tp_target == v }}>{{ l }}</option>{% endfor %}
+          </select></div>
+        {{ num("entry_expiry_min", "Give up on unfilled entries after (min)", "1") }}
+      </div>
+      {{ chk("smart_entry", "Smart entry: wait and enter at market when price comes close to the entry, instead of leaving limit orders") }}
+      <div class="fields">{{ num("smart_distance_pips", "Smart entry distance (pips)", "1", "How close price must get") }}</div>
+      {{ lock(["smart_entry", "layers", "tp_target"]) }}
+      </div>
+    </details>
+
+    <details class="sec">
+      <summary><b>Managing trades</b><small>{{ "Breakeven at TP1" if settings.breakeven_at_tp1 else "No auto breakeven" }} · {{ "follows the group" if settings.follow_updates else "ignores group updates" }}</small></summary>
+      <div class="sec-body">
+      {{ chk("breakeven_at_tp1", "Move stop loss to breakeven once TP1 is hit") }}
+      <div class="fields">{{ num("be_offset_pips", "Lock in (pips) past entry", "0.5") }}</div>
+      {{ chk("cancel_pending_after_tp1", "Cancel unfilled entries once TP1 is hit") }}
+      {{ chk("cancel_pending_on_be", "Cancel unfilled entries when the group says breakeven / risk-free, or the first entry closes at breakeven") }}
+      {{ chk("follow_updates", "Follow the group's updates (close now, move SL, cancel)") }}
+      {{ chk("instant_entry", 'Enter "BUY NOW" / "SELL NOW" calls straight away, before the stop loss is posted') }}
+      <p class="muted" style="font-size:13px;margin:-4px 0 10px">Gets you the price the call was made at. A temporary stop (below) protects the trade until the group edits in or posts its real stop loss and targets, which then replace it on every layer. Lot size is worked out from the temporary stop.</p>
+      {{ chk("require_sl", "Other signals without a stop loss: wait for the group to post one (up to 30 min) before entering") }}
+      <div class="fields">{{ num("default_sl_pips", "Temporary stop loss until the group posts one (pips)", "1", "50 pips = $5 on gold") }}</div>
+      </div>
+    </details>
+
+    <details class="sec">
+      <summary><b>Daily limits</b><small>{% if settings.daily_loss_limit or settings.daily_loss_pct or settings.daily_profit_limit or settings.daily_profit_pct %}On{% else %}Off{% endif %}</small></summary>
+      <div class="sec-body">
+      <p class="about">Counted from the balance at the start of the broker's day. Use 0 to turn a limit off.</p>
+      <div class="fields">
+        {{ num("daily_loss_limit", "Stop after losing (" ~ (cur or "money") ~ ")", "1") }}
+        {{ num("daily_loss_pct", "or losing (%)", "0.1") }}
+        {{ num("daily_profit_limit", "Stop after making (" ~ (cur or "money") ~ ")", "1") }}
+        {{ num("daily_profit_pct", "or making (%)", "0.1") }}
+      </div>
+      {{ chk("close_on_limit", "Close open trades when a limit is hit") }}
+      {{ lock(["daily_loss_limit"]) }}
+      </div>
+    </details>
+
+    <details class="sec">
+      <summary><b>News protection</b><small>{{ ("On, " ~ settings.news_before_min ~ " min before / " ~ settings.news_after_min ~ " after") if settings.news_protection else "Off" }}</small></summary>
+      <div class="sec-body">
+      {{ chk("news_protection", "Don't open trades around high-impact news") }}
+      <div class="fields">
+        {{ num("news_before_min", "Minutes before", "1") }}
+        {{ num("news_after_min", "Minutes after", "1") }}
+        <div class="field"><label for="s-nc">Currencies</label><input id="s-nc" name="news_currencies" type="text" value="{{ settings.news_currencies }}" {{ 'disabled' if 'news_currencies' in locked }}><div class="hint">USD covers gold.</div></div>
+      </div>
+      {{ chk("news_close_trades", "Also close open trades before the news") }}
+      {{ lock(["news_protection"]) }}
+      </div>
+    </details>
+
+    <details class="sec">
+      <summary><b>Symbol</b><small>{{ settings.symbol or live.symbol or "Found automatically" }}</small></summary>
+      <div class="sec-body">
+      <div class="fields">
+        <div class="field"><label for="s-sym">Gold symbol on your broker</label><input id="s-sym" name="symbol" type="text" value="{{ settings.symbol }}" placeholder="Found automatically">
+          <div class="hint">{% if live.symbol %}Using {{ live.symbol }}.{% else %}Leave blank unless your broker uses an unusual name.{% endif %}</div></div>
+        <div class="field"><label for="s-label">Nickname</label><input id="s-label" name="label" type="text" value="{{ acc.label }}"></div>
+      </div>
+      </div>
+    </details>
+    <div class="savebar"><span>Changes apply to the next signal.</span><button class="btn primary" type="submit">Save settings</button></div>
+  </form>
+</section>
+
+<div class="stack">
+  <section class="panel">
+    <h2>Results</h2>
+    <div class="figures" style="grid-template-columns:1fr 1fr">
+      <div><span>Trades closed</span><b class="num">{{ stats.trades }}</b></div>
+      <div><span>All time</span><b>{{ m.pnl(stats.periods.all, cur) }}</b></div>
+    </div>
+    <div class="figures" style="grid-template-columns:1fr 1fr;margin-top:12px">
+      <div><span>Average win</span><b>{{ m.pnl(stats.avg_win, cur) }}</b></div>
+      <div><span>Average loss</span><b>{{ m.pnl(stats.avg_loss, cur) }}</b></div>
+    </div>
+  </section>
+  <section class="panel">
+    <h2>Closed trades</h2>
+    {% if deals %}
+    <div class="scroll-list">
+      {% for d in deals %}<div class="mini-trade"><span class="side {{ d.side }}">{{ d.side|capitalize }}</span>
+        <span>{{ d.symbol }}{% if not d.ours %} · your own{% endif %}<small>{{ d.time|date("%d %b %H:%M") }} · {{ d.volume }} lots</small></span>
+        <b class="{{ 'up' if d.profit > 0 else 'down' if d.profit < 0 }}">{{ d.profit|signed(cur) }}</b></div>{% endfor %}
+    </div>
+    {% else %}<p class="muted">Nothing closed yet.</p>{% endif %}
+  </section>
+  <section class="panel">
+    <h2>Login details</h2>
+    <p class="muted">Changed your MT5 password or moved server? Update it here and the account reconnects.</p>
+    <form method="post" action="/accounts/{{ acc.id }}/credentials" autocomplete="off">
+      {{ m.csrf_field(csrf) }}
+      <div class="field"><label for="c-srv">Server</label><input id="c-srv" name="server" type="text" value="{{ acc.server }}"></div>
+      <div class="field"><label for="c-pw">New password</label><input id="c-pw" name="password" type="password" autocomplete="new-password" placeholder="Leave blank to keep"></div>
+      <button class="btn" type="submit">Update login</button>
+    </form>
+  </section>
+  <section class="panel">
+    <h2>Remove account</h2>
+    <p class="muted">Stops copying and disconnects MT5. Open trades stay open on your broker.</p>
+    <form method="post" action="/accounts/{{ acc.id }}/remove">{{ m.csrf_field(csrf) }}
+      <button class="btn danger" type="submit" data-confirm="Remove this account from {{ site }}?">Remove account</button></form>
+  </section>
+</div>
+</div>
+{% endblock %}

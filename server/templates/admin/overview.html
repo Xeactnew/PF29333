@@ -1,0 +1,87 @@
+{% extends "admin/base.html" %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+<div class="pagehead"><div><span class="eyebrow">// overview</span><h1>Overview</h1><p>{{ counts.users }} open customer accounts, {{ counts.active_today }} active in the last day.</p></div>
+  <a class="btn primary" href="/admin/users#new">Create a login</a></div>
+
+{% if setup_left %}
+<section class="panel glow" style="margin-bottom:18px">
+  <div class="panel-head"><h2>Hands-off checklist</h2><span class="pill waiting">{{ setup_left }} to do</span></div>
+  <p class="muted">Once these are all ticked, PipsFarmer runs without anyone on the VPS.</p>
+  <ul class="todo">{% for label, ok, href in setup %}<li class="{{ 'done' if ok }}"><a href="{{ href }}">{{ label }}</a></li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+{% if plan_requests %}
+<section class="panel glow" style="margin-bottom:18px">
+  <div class="panel-head"><h2>Plan requests</h2><span class="pill waiting">{{ plan_requests|length }} waiting</span></div>
+  <p class="muted">They were told to message @xaupipsfarmer to pay. Tap Paid once the money's in and their plan switches on.</p>
+  <div class="table-wrap"><table>
+    <tr><th>Ref</th><th>Customer</th><th>Wants</th><th>Asked</th><th></th></tr>
+    {% for r in plan_requests %}
+    <tr><td class="mono">PF-{{ r.id }}</td><td><a href="/admin/users/{{ r.user.id }}">{{ r.user.username }}</a></td>
+      <td>{{ m.plan_tag(r.plan) }} {{ r.billing }} <small>{{ r.plan.currency }}{{ '%g'|format(r.plan.monthly_price if r.billing == 'monthly' else r.plan.lifetime_price) }}</small></td>
+      <td><small>{{ r.created_at|ago }}</small></td>
+      <td class="r"><form method="post" action="/admin/requests/{{ r.id }}/approve" class="inline">{{ m.csrf_field(csrf) }}<button class="btn small primary">Paid</button></form>
+        <form method="post" action="/admin/requests/{{ r.id }}/decline" class="inline">{{ m.csrf_field(csrf) }}<button class="btn small danger">Decline</button></form></td></tr>
+    {% endfor %}
+  </table></div>
+</section>
+{% endif %}
+
+{% if open_tickets %}<div class="flash warn"><a href="/admin/support">{{ open_tickets }} support question{{ "s" if open_tickets != 1 }} waiting for a reply.</a></div>{% endif %}
+
+{% if renewals %}
+<section class="panel" style="border-color:var(--amber);margin-bottom:18px">
+  <div class="panel-head"><h2>Did they pay?</h2><a href="/admin/renewals">All renewals</a></div>
+  {% include "admin/_renewal_rows.html" %}
+</section>
+{% endif %}
+
+<div class="panel"><div class="figures">
+  {% for name, n in per_plan %}<div><span>{{ name }}</span><b class="num">{{ n }}</b></div>{% endfor %}
+  <div><span>Monthly payers</span><b class="num">{{ counts.monthly }}</b></div>
+  <div><span>Lifetime</span><b class="num">{{ counts.lifetime }}</b></div>
+  <div><span>Active this week</span><b class="num">{{ counts.active_week }}</b></div>
+</div></div>
+
+<div class="grid g3" style="margin-top:18px">
+  <section class="panel">
+    <h2>Servers</h2>
+    <div class="figures" style="grid-template-columns:1fr 1fr">
+      <div><span>Slots used</span><b class="num">{{ cap.in_use }} / {{ cap.total }}</b></div>
+      <div><span>Waiting</span><b class="num {{ 'down' if cap.waiting }}">{{ cap.waiting }}</b></div>
+    </div>
+    <p class="muted" style="margin-top:12px">{{ cap.online }} of {{ cap.nodes|length }} VPS online. {% if cap.free <= 2 %}<b class="down">Time to add a VPS.</b>{% endif %}</p>
+    <a href="/admin/nodes">Manage servers</a>
+  </section>
+  <section class="panel">
+    <h2>MT5 accounts</h2>
+    <div class="figures" style="grid-template-columns:1fr 1fr">
+      <div><span>Online</span><b class="num up">{{ counts.accounts_online }}</b></div>
+      <div><span>With a problem</span><b class="num {{ 'down' if counts.accounts_error }}">{{ counts.accounts_error }}</b></div>
+    </div>
+  </section>
+  <section class="panel">
+    <h2>Signals today</h2>
+    <div class="figures"><div><span>Received</span><b class="num">{{ counts.signals_today }}</b></div></div>
+    <a href="/admin/signals">See signals</a>
+  </section>
+</div>
+
+<div class="grid g2" style="margin-top:18px">
+  <section class="panel">
+    <h2>Renewing in the next 7 days</h2>
+    {% if upcoming %}
+    <table><tr><th>Customer</th><th>Plan</th><th>Due</th></tr>
+      {% for u in upcoming %}<tr data-href="/admin/users/{{ u.id }}"><td><a href="/admin/users/{{ u.id }}">{{ u.username }}</a></td><td>{{ m.plan_tag(u.plan) }}</td><td>{{ u.paid_until|date }} <small>({{ u.paid_until|until }})</small></td></tr>{% endfor %}
+    </table>
+    {% else %}<p class="muted">Nobody's monthly payment is due this week.</p>{% endif %}
+  </section>
+  <section class="panel">
+    <h2>Latest activity</h2>
+    <table>{% for a in recent %}<tr><td><small>{{ a.time|ago }}</small></td><td>{{ a.actor }}</td><td>{{ a.action.replace("_", " ") }} <small>{{ a.detail[:60] }}</small></td></tr>{% endfor %}</table>
+    {% if notes %}<h3 style="margin-top:18px">Bot messages</h3>{% for t, text in notes %}<p class="muted" style="font-size:13px;margin:0 0 6px">{{ t.strftime("%d %b %H:%M") }}: {{ text[:140] }}</p>{% endfor %}{% endif %}
+  </section>
+</div>
+{% endblock %}

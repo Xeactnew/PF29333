@@ -1,0 +1,79 @@
+{% macro logo(size=26) -%}
+{{ brand_logo(size) }}
+{%- endmacro %}
+
+{% macro csrf_field(csrf) -%}<input type="hidden" name="csrf" value="{{ csrf }}">{%- endmacro %}
+
+{% macro pnl(v, cur="") -%}
+<span class="num {{ 'up' if v > 0 else 'down' if v < 0 else '' }}">{{ v|signed(cur) }}</span>
+{%- endmacro %}
+
+{% macro status(acc) -%}
+{% set labels = {"online": "Online", "waiting": "Waiting for a slot", "starting": "Connecting", "error": "Problem",
+                 "stopped": "Stopped", "new": "New"} %}
+<span class="pill {{ acc.conn_status }}">{{ labels.get(acc.conn_status, acc.conn_status) }}</span>
+{%- endmacro %}
+
+{% macro user_status(u) -%}
+{% set labels = {"active": "Active", "payment_check": "Payment check", "closed": "Closed"} %}
+<span class="pill {{ u.status }}">{{ labels.get(u.status, u.status) }}</span>
+{%- endmacro %}
+
+{% macro plan_tag(plan) -%}<span class="plan-tag {{ plan.key }}">{{ plan.name }}</span>{%- endmacro %}
+
+{% macro billing(u) -%}
+{% if u.billing == "monthly" %}Monthly, paid to {{ u.paid_until|date }}{% elif u.billing == "lifetime" %}Lifetime{% else %}Free{% endif %}
+{%- endmacro %}
+
+{% macro signal_row(sig, updates=[], controls=None, extra=None) -%}
+{% set reached = sig.tp_reached %}
+<div class="signal">
+  <div class="when">{{ sig.created_at|date("%d %b") }}<br>{{ sig.created_at|date("%H:%M") }} UTC</div>
+  <div>
+    <div class="levels">
+      <b class="side {{ sig.side }}">{{ sig.side|capitalize }}{% if sig.order_type != "market" %} {{ sig.order_type }}{% endif %}</b>
+      {% if not sig.entry_low %}<span>gold @</span>market (now){% else %}<span>gold @</span>{{ sig.entry_high|price if sig.side == "buy" else sig.entry_low|price }}{% if sig.entry_low != sig.entry_high %}–{{ sig.entry_low|price if sig.side == "buy" else sig.entry_high|price }}{% endif %}{% endif %}
+      <span>SL</span>{{ sig.sl|price }}
+      {% for tp in sig.tps %}<span>TP{{ loop.index }}</span>{{ tp|price }}{% endfor %}
+    </div>
+    <div class="meta">{{ sig.channel or sig.source.title }}
+      {% for u in updates %}, {{ {"tp_hit": ("all TPs hit" if (u.value or 0) >= 99 else "TP" ~ (u.value|int) ~ " hit"), "breakeven": "breakeven", "close": "closed", "close_partial": "half closed", "sl_hit": "SL hit", "sl_move": "SL moved to " ~ (u.value|price), "cancel": "cancelled", "levels": ("SL set to " ~ (u.value|price)) if u.value else "TPs set"}.get(u.kind, u.kind) }}{% endfor %}
+    </div>
+    {% if extra %}<div class="meta">{{ extra }}</div>{% endif %}
+    {% if sig.tps %}<div class="ladder" aria-hidden="true">{% for tp in sig.tps %}<i class="{{ 'hit' if loop.index <= reached }}"></i>{% endfor %}</div>{% endif %}
+  </div>
+  <div>{% if controls %}{{ controls }}{% else %}<span class="pill plain">{{ {"open": "Running", "closed": "Closed", "cancelled": "Cancelled"}.get(sig.status, sig.status) }}</span>{% endif %}</div>
+</div>
+{%- endmacro %}
+
+{% macro flashes(items) -%}
+{% for kind, text in items %}<div class="flash {{ kind }}" role="status">{{ text }}</div>{% endfor %}
+{%- endmacro %}
+
+{% macro manual_form(action, csrf, accounts=None, button="Send signal") -%}
+<form method="post" action="{{ action }}">
+  {{ csrf_field(csrf) }}
+  <div class="fields">
+    <div class="field"><label for="mf-side">Direction</label>
+      <select id="mf-side" name="side"><option value="buy">Buy</option><option value="sell">Sell</option></select></div>
+    <div class="field"><label for="mf-type">Entry type</label>
+      <select id="mf-type" name="order_type"><option value="market">Market or zone</option><option value="limit">Limit only</option></select></div>
+    <div class="field"><label for="mf-e1">Entry</label><input id="mf-e1" name="entry1" type="number" step="0.01" required placeholder="4037"></div>
+    <div class="field"><label for="mf-e2">Zone other end (optional)</label><input id="mf-e2" name="entry2" type="number" step="0.01" placeholder="4030"></div>
+    <div class="field"><label for="mf-sl">Stop loss</label><input id="mf-sl" name="sl" type="number" step="0.01" required placeholder="4027"></div>
+    <div class="field"><label for="mf-tp1">TP1</label><input id="mf-tp1" name="tp1" type="number" step="0.01" placeholder="4047"></div>
+    <div class="field"><label for="mf-tp2">TP2</label><input id="mf-tp2" name="tp2" type="number" step="0.01" placeholder="4057"></div>
+    <div class="field"><label for="mf-tp3">TP3</label><input id="mf-tp3" name="tp3" type="number" step="0.01" placeholder="4067"></div>
+  </div>
+  {% if accounts is not none %}
+  <div class="field"><label>Send to</label>
+    {% for a in accounts %}<label class="check"><input type="checkbox" name="accounts" value="{{ a.id }}" checked> {{ a.label or a.login }} <small>{{ a.server }}</small></label>{% else %}<p class="muted">Add an MT5 account first.</p>{% endfor %}
+  </div>
+  {% endif %}
+  <button class="btn primary" type="submit">{{ button }}</button>
+</form>
+{%- endmacro %}
+
+{% macro icon(name) -%}
+<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ tab_icons[name]|safe }}</svg>
+{%- endmacro %}

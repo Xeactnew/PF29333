@@ -1,0 +1,35 @@
+{# Swipeable signal group cards (overview and signals page). Needs: groups, cur, period ("today"/"week") #}
+{% set per = period or "today" %}
+<section class="panel" id="groups" style="margin-top:18px" aria-label="Signal groups">
+  <div class="panel-head"><h2>{{ deck_title or "Your signal groups" }}</h2><small class="deck-count" data-deck-count>{{ groups|length }} group{{ 's' if groups|length != 1 }}</small></div>
+  {% if groups %}
+  <div class="gdeck" data-deck>
+  {% for g in groups %}
+    {% set blockers = g.checks|rejectattr(0)|list %}
+    {% set st = g[per] %}
+    <article class="gcard {{ 'is-ready' if g.ready else 'is-held' }}{{ ' in-trade' if g.in_trade }}" id="g-{{ g.key }}">
+      <div class="gtop">
+        <div><h3>{{ g.title }}</h3><small>{{ g.source if g.source and g.source != g.title else "Telegram group" }}</small></div>
+        <span class="tag {{ 'trade' if g.in_trade else ('go' if g.ready else 'hold') }}">{{ "In a trade" if g.in_trade else ("Armed" if g.ready else ("Off" if g.paused else "On hold")) }}</span>
+      </div>
+      <p class="gstate">{% if g.in_trade %}A trade from this group is open now.{% elif g.ready %}Copies this group's next call.{% else %}{{ blockers[0][2] or blockers[0][1] }}{% endif %}</p>
+      <ul class="gchecks">{% for done, what, why in g.checks %}<li class="{{ 'ok' if done else 'no' }}">{{ what }}</li>{% endfor %}</ul>
+      <p class="glast">{% if g.last %}Last call <b class="side {{ g.last.side }}">{{ g.last.side|capitalize }}</b> {% if g.last.entry_low %}{{ g.last.entry_low|price }}{% if g.last.entry_high != g.last.entry_low %}–{{ g.last.entry_high|price }}{% endif %}{% else %}at market{% endif %} · {{ g.last.created_at|ago }}{% else %}No calls yet{% endif %}</p>
+      <dl class="gnums">
+        <div><dt>Calls</dt><dd class="num">{{ st.signals }}</dd></div>
+        <div><dt>Trades</dt><dd class="num">{{ st.trades }}</dd></div>
+        <div><dt>Win %</dt><dd class="num">{{ st.win_rate if st.trades else "—" }}</dd></div>
+        <div><dt>{{ "Today" if per == "today" else "7 days" }}</dt><dd>{{ m.pnl(st.pnl, cur) }}</dd></div>
+      </dl>
+      <div class="gfoot">
+        <a class="btn small" href="/signals?g={{ g.key }}">Its calls</a>
+        {% for x in g.accounts %}<a class="btn small" href="/accounts/{{ x.acc.id }}#g-{{ g.key }}">Settings{% if g.accounts|length > 1 %} · {{ x.acc.label or x.acc.login }}{% endif %}</a>{% endfor %}
+      </div>
+    </article>
+  {% endfor %}
+  </div>
+  {% if groups|length > 1 %}<div class="deck-dots" data-deck-dots aria-hidden="true">{% for g in groups %}<i class="{{ 'on' if loop.first }}"></i>{% endfor %}</div>{% endif %}
+  {% else %}
+  <p class="muted">No groups yet. Once a group your accounts follow posts a call, it shows up here.</p>
+  {% endif %}
+</section>

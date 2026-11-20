@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Help | {{ site }}{% endblock %}
+{% block body %}
+<div class="auth" style="max-width:520px">
+  <a class="wordmark" href="/">{{ m.logo(30) }}{{ site }}</a>
+  <div class="panel">
+    <h1>Get help</h1>
+    {% if request.query_params.get("sent") %}
+      <div class="flash ok">Thanks, we've got your message and will reply by email.</div>
+      <p><a href="/">Back to the home page</a></p>
+    {% else %}
+    <p class="muted">Can't log in, or a question before you sign up? Send us a message. Logged-in customers can use the Support page.</p>
+    {% if error %}<div class="flash err" role="alert">{{ error }}</div>{% endif %}
+    <form method="post" action="/help">
+      {{ m.csrf_field(csrf) }}
+      <div class="field"><label for="n">Name</label><input id="n" name="name" type="text" required value="{{ name or '' }}"></div>
+      <div class="field"><label for="e">Email</label><input id="e" name="email" type="email" required value="{{ email or '' }}"></div>
+      <div class="field"><label for="sj">Subject</label><input id="sj" name="subject" type="text" maxlength="200"></div>
+      <div class="field"><label for="ms">Message</label><textarea id="ms" name="message" rows="5" required>{{ message or '' }}</textarea></div>
+      <input type="text" name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true">
+      <button class="btn primary" type="submit" style="width:100%">Send</button>
+    </form>
+    {% if contact_link %}<p class="muted" style="margin:16px 0 0;font-size:13px">Or message <a href="{{ contact_link }}" target="_blank" rel="noopener">@xaupipsfarmer on Telegram</a>.</p>{% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

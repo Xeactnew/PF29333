@@ -1,0 +1,64 @@
+{% extends "admin/base.html" %}
+{% block title %}Signals{% endblock %}
+{% block content %}
+<div class="pagehead"><div><h1>Signals</h1>
+  <p>VIP reader: {{ tg_status.main }}. Customer Telegram links running: {{ tg_status.users }}. Admin bot: {{ tg_status.bot }}.</p></div>
+  <div class="actions"><a class="btn" href="/admin/signals.xlsx">Download signals log (Excel)</a></div></div>
+
+<section class="panel" style="margin-bottom:18px">
+  <div class="panel-head"><h2>By channel</h2><small>Every signal from every group, and who took it. The Excel log has a tab per channel and is also kept on the VPS in <span class="mono">C:\PipsFarmer\signals</span>.</small></div>
+  <div class="table-wrap"><table>
+    <tr><th>Channel</th><th>Type</th><th class="r">Signals</th><th class="r">Taken</th><th class="r">Wins</th><th class="r">Losses</th><th class="r">Result</th><th>Last signal</th></tr>
+    {% for c in channels %}
+    <tr data-href="/admin/signals?channel={{ c.channel|urlencode }}">
+      <td><a href="/admin/signals?channel={{ c.channel|urlencode }}">{{ c.channel }}</a></td><td><small>{{ c.type }}</small></td>
+      <td class="r num">{{ c.signals }}</td><td class="r num">{{ c.taken }}</td><td class="r num">{{ c.wins }}</td><td class="r num">{{ c.losses }}</td>
+      <td class="r">{% for cur, v in c.pnl.items() %}{{ m.pnl(v, cur) }} {% else %}<small>none yet</small>{% endfor %}</td>
+      <td><small>{{ c.last|ago }}</small></td>
+    </tr>
+    {% else %}<tr><td colspan="8" class="muted">No signals yet.</td></tr>{% endfor %}
+  </table></div>
+</section>
+
+<div class="grid g-side">
+<section class="panel">
+  <form method="get" class="actions" style="margin-bottom:14px">
+    <select name="channel" style="max-width:260px"><option value="">All channels</option>{% for c in channels %}<option value="{{ c.channel }}" {{ 'selected' if channel == c.channel }}>{{ c.channel }}</option>{% endfor %}</select>
+    <label class="check" style="margin:0"><input type="checkbox" name="taken" value="1" {{ 'checked' if taken }}> <span>Only signals someone took</span></label>
+    <button class="btn" type="submit">Show</button>
+  </form>
+  {% for r in rows %}{% set s = r.signal %}
+    {% set extra %}{% if r.accounts %}Taken by {{ r.accounts }} account{{ "s" if r.accounts != 1 }} · {{ r.lots }} lots · {% for cur, v in r.pnl.items() %}{{ m.pnl(v, cur) }} {% endfor %}{% else %}Not taken by any account{% endif %}{% if r.sl_changes %} · SL: {{ r.orig_sl|price if r.orig_sl else "none" }}{% for t, v, b in r.sl_changes %} → {{ v|price }}{% endfor %}{% endif %}{% endset %}
+    {% if s.status == "open" %}
+      {% set controls %}
+      <form method="post" action="/admin/signals/{{ s.id }}/update" class="actions" style="justify-content:flex-end;max-width:300px">
+        {{ m.csrf_field(csrf) }}
+        <input name="value" type="number" step="0.01" placeholder="TP no. or new SL" style="max-width:130px" aria-label="Value">
+        <button class="btn small" name="kind" value="tp_hit">TP hit</button>
+        <button class="btn small" name="kind" value="sl_move">Move SL</button>
+        <button class="btn small" name="kind" value="breakeven">Breakeven</button>
+        <button class="btn small" name="kind" value="close_partial">Close half</button>
+        <button class="btn small danger" name="kind" value="close" data-confirm="Close signal #{{ s.id }} on every account?">Close</button>
+        <button class="btn small" name="kind" value="cancel">Cancel unfilled</button>
+      </form>
+      {% endset %}
+      {{ m.signal_row(s, updates.get(s.id, []), controls, extra) }}
+    {% else %}
+      {{ m.signal_row(s, updates.get(s.id, []), None, extra) }}
+    {% endif %}
+  {% else %}<p class="muted">No signals {{ "match" if channel or taken else "yet. They appear here as soon as a group posts one" }}.</p>{% endfor %}
+</section>
+<div class="stack">
+  <section class="panel">
+    <h2>Post to {{ main.title }}</h2>
+    <p class="muted">Goes to every customer account that follows {{ main.title }}, using each account's own settings. Updates you send on the left (TP hit, breakeven, close) go to the same accounts.</p>
+    {{ m.manual_form("/admin/signals/manual", csrf, None, "Send to all accounts") }}
+  </section>
+  <section class="panel">
+    <h2>Sources</h2>
+    {% for s in sources %}<p style="margin:0 0 6px">{{ s.title }} <small>{{ "main group" if s.kind == "main" else "customer channel" }}{{ "" if s.active else ", off" }}</small></p>{% endfor %}
+    {% if vip %}<p class="muted" style="margin-top:10px">{{ main.title }} reads: {{ vip|join(" · ") }}</p>{% endif %}
+  </section>
+</div>
+</div>
+{% endblock %}

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}MT5 accounts | {{ site }}{% endblock %}
+{% block content %}
+<div class="pagehead">
+  <div><h1>MT5 accounts</h1><p>{{ accounts|length }} of {{ max_accounts if max_accounts < 999 else "unlimited" }} used on your {{ user.plan.name }} plan.</p></div>
+</div>
+
+<div class="grid g-side">
+  <section class="panel">
+    {% if accounts %}
+    {% for a in accounts %}
+    <a class="arow" href="/accounts/{{ a.id }}">
+      <i class="dot {{ 'on' if a.conn_status == 'online' and a.copy_enabled else 'off' }}"></i>
+      <span><b>{{ a.label or a.broker or a.login }}</b><small>{{ a.login }} on {{ a.server }}</small>
+        <small>{{ m.status(a) }} · {{ "Copying" if a.copy_enabled else "Paused" }}</small>
+        {% if a.conn_status == "error" %}<small class="down">{{ a.conn_error[:90] }}</small>{% endif %}</span>
+      <span class="r"><b class="num">{{ a.balance|money(a.currency) }}</b><small>Equity {{ a.equity|money(a.currency) }}</small></span>
+    </a>
+    {% endfor %}
+    {% else %}
+    <h2>No accounts yet</h2>
+    <p class="muted">Add an MT5 account on the right. We run MT5 for you on our servers, so you don't need to keep your computer on.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    {% if can_add %}
+    <details class="sec"{{ ' open' if not accounts }}>
+    <summary><b>Add an MT5 account</b><small>{{ (max_accounts - accounts|length) if max_accounts < 999 else "Unlimited" }} more allowed on your plan</small></summary>
+    <div class="sec-body">
+    {% if free_slots == 0 %}<div class="flash warn">Our servers are full right now. You can still add your account: it joins the queue and connects by itself when a slot frees up.</div>{% endif %}
+    <form method="post" action="/accounts/add" autocomplete="off">
+      {{ m.csrf_field(csrf) }}
+      <div class="field"><label for="login">MT5 login number</label><input id="login" name="login" type="text" inputmode="numeric" required placeholder="12345678"></div>
+      <div class="field"><label for="pw">Password</label><input id="pw" name="password" type="password" required autocomplete="new-password">
+        <div class="hint">The main trading password. An investor (read-only) password can't place trades.</div></div>
+      <div class="field"><label for="brk">Broker</label>
+        <select id="brk" data-broker-filter>
+          <option value="">Any broker (type the server below)</option>
+          {% for name in brokers %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+        </select></div>
+      <div class="field"><label for="srv">Server</label><input id="srv" name="server" type="text" required placeholder="Start typing, e.g. PUPrime-Live" list="servers-all">
+        <div class="hint">Pick from the list or type it exactly as your broker's email or MT5 shows it. Not listed? Type it anyway: our MT5 looks new servers up by itself.</div></div>
+      <p class="muted" style="font-size:13px;margin:-4px 0 12px">Using a prop firm account? Check their rules first: some don't allow copy trading or trading from a shared server.</p>
+      <datalist id="servers-all">{% for srv in learned %}<option value="{{ srv }}">{% endfor %}{% for name, servers in brokers.items() %}{% for srv in servers %}<option value="{{ srv }}" label="{{ name }}">{% endfor %}{% endfor %}</datalist>
+      {% for name, servers in brokers.items() %}<datalist id="servers-{{ loop.index }}" data-broker="{{ name }}">{% for srv in servers %}<option value="{{ srv }}">{% endfor %}</datalist>{% endfor %}
+      <div class="field"><label for="lbl">Nickname (optional)</label><input id="lbl" name="label" type="text" placeholder="Main account"></div>
+      <button class="btn primary" type="submit">Add account</button>
+    </form>
+    <p class="muted" style="margin-top:14px;font-size:13px">Your password is encrypted and only used to log your account into MT5 on our servers.</p>
+    </div></details>
+    {% else %}
+    <h2>Add an MT5 account</h2>
+    <p>Your {{ user.plan.name }} plan allows {{ max_accounts }} account{{ "s" if max_accounts != 1 }}. Remove one or <a href="/plan">upgrade</a> to add more.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

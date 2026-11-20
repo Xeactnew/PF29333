@@ -1,0 +1,22 @@
+# live data and secrets: never commit
+data/
+.env
+*.db
+*.db-*
+node/node.json
+node/node.lock
+node/accounts/
+accounts/
+mt5-base/
+mt5-base-building/
+signals/
+logs/
+*.log
+backups/
+
+# build / tooling
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+*.zip

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Plan | {{ site }}{% endblock %}
+{% block content %}
+<div class="pagehead"><div><h1>Your plan</h1><p>{{ m.plan_tag(user.plan) }} &nbsp;{{ m.billing(user) }}</p></div></div>
+
+{% if pending %}
+<section class="panel glow" style="margin-bottom:18px">
+  <div class="panel-head"><h2>Waiting for your payment</h2><span class="pill waiting">PF-{{ pending.id }}</span></div>
+  <p>You asked for <b>{{ pending.plan.name }}</b> ({{ pending.billing }}, {{ pending.plan.currency }}{{ '%g'|format(pending.plan.monthly_price if pending.billing == 'monthly' else pending.plan.lifetime_price) }}{{ '/month' if pending.billing == 'monthly' }}). {{ contact_text }}</p>
+  <p class="muted">Mention your reference <code>PF-{{ pending.id }}</code> and your username <code>{{ user.username }}</code>. We switch your plan on as soon as the payment lands.</p>
+  {% if contact_link %}<a class="btn primary" href="{{ contact_link }}" target="_blank" rel="noopener">Message @xaupipsfarmer on Telegram</a>{% endif %}
+</section>
+{% elif top %}
+<section class="panel" style="margin-bottom:18px">
+  <h2>You're on our top plan</h2>
+  <p class="muted">Everything is unlocked{% if user.billing == "lifetime" %}, for life{% endif %}. Questions or ideas? We're on Telegram.</p>
+  {% if contact_link %}<a class="btn" href="{{ contact_link }}" target="_blank" rel="noopener">Message us on Telegram</a>{% endif %}
+</section>
+{% else %}
+<section class="panel" style="margin-bottom:18px">
+  <h2>Upgrading</h2>
+  <p>Pick a plan below, then pay by crypto or bank transfer. {{ contact_text }}</p>
+  {% if contact_link %}<a class="btn" href="{{ contact_link }}" target="_blank" rel="noopener">Message us on Telegram</a>{% endif %}
+</section>
+{% endif %}
+{% if user.expires_at %}<div class="flash warn">Your access runs until {{ user.expires_at|date("%d %b %Y") }}.</div>{% endif %}
+
+{% set current_plan_id = user.plan_id %}
+{% if top %}<details class="sec"><summary><b>Compare plans</b><small>See what each plan includes</small></summary><div class="sec-body">{% endif %}
+{% include "_plan_cards.html" %}
+{% if top %}</div></details>{% endif %}
+
+<div class="grid g2" style="margin-top:18px">
+<section class="panel">
+  <h2>Email</h2>
+  <p class="muted">For payment reminders and support replies.</p>
+  <form method="post" action="/profile/email">
+    {{ m.csrf_field(csrf) }}
+    <div class="field"><label for="em">Email</label><input id="em" name="email" type="email" autocomplete="email" value="{{ user.email }}" required></div>
+    <button class="btn" type="submit">Save email</button>
+  </form>
+</section>
+<section class="panel">
+  <h2>Change password</h2>
+  <form method="post" action="/profile/password">
+    {{ m.csrf_field(csrf) }}
+    <div class="field"><label for="cur">Current password</label><input id="cur" name="current" type="password" autocomplete="current-password" required></div>
+    <div class="field"><label for="new">New password</label><input id="new" name="new" type="password" autocomplete="new-password" minlength="8" required></div>
+    <button class="btn" type="submit">Change password</button>
+  </form>
+</section>
+</div>
+{% endblock %}

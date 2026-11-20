@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Support | {{ site }}{% endblock %}
+{% block content %}
+<div class="pagehead"><div><span class="eyebrow">// support</span><h1>Support</h1><p>Ask us anything. We reply here and by email.</p></div></div>
+<div class="grid g-side">
+<section class="panel">
+  <h2>Your questions</h2>
+  {% if tickets %}
+  <div class="table-wrap"><table>
+    <tr><th>#</th><th>Subject</th><th>Status</th><th>Updated</th></tr>
+    {% for t in tickets %}
+    <tr data-href="/support/{{ t.id }}"><td class="mono">{{ t.id }}</td><td><a href="/support/{{ t.id }}">{{ t.subject }}</a></td>
+      <td><span class="pill {{ {'open': 'waiting', 'answered': 'online', 'closed': 'plain'}[t.status] }}">{{ {"open": "Waiting for us", "answered": "Answered", "closed": "Closed"}[t.status] }}</span></td>
+      <td><small>{{ t.updated_at|ago }}</small></td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="muted">No questions yet.</p>{% endif %}
+</section>
+<section class="panel">
+  <h2>Ask for help</h2>
+  <form method="post" action="/support">
+    {{ m.csrf_field(csrf) }}
+    <div class="field"><label for="sj">Subject</label><input id="sj" name="subject" type="text" required maxlength="200" placeholder="My account won't connect"></div>
+    {% if accounts %}<div class="field"><label for="ac">MT5 account (optional)</label><select id="ac" name="account"><option value="">Not about one account</option>
+      {% for a in accounts %}<option value="{{ a.login }} @ {{ a.server }}">{{ a.label or a.login }} ({{ a.server }})</option>{% endfor %}</select></div>{% endif %}
+    <div class="field"><label for="ms">Message</label><textarea id="ms" name="message" required rows="6" placeholder="What happened, and what did you expect?"></textarea></div>
+    <button class="btn primary" type="submit">Send</button>
+  </form>
+  {% if contact_link %}<p class="muted" style="margin-top:14px;font-size:13px">Payments and quick questions: <a href="{{ contact_link }}" target="_blank" rel="noopener">@xaupipsfarmer on Telegram</a>.</p>{% endif %}
+</section>
+</div>
+{% endblock %}

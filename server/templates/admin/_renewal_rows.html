@@ -1,0 +1,15 @@
+<div class="table-wrap"><table>
+  <tr><th>Customer</th><th>Plan</th><th>Was due</th><th>Asked</th><th></th></tr>
+  {% for r in renewals %}
+  <tr>
+    <td><a href="/admin/users/{{ r.user.id }}">{{ r.user.username }}</a>{% if r.user.email %}<br><small>{{ r.user.email }}</small>{% endif %}</td>
+    <td>{{ m.plan_tag(r.user.plan) }} <small>{{ r.user.plan.currency }}{{ '%g'|format(r.user.plan.monthly_price) }}/mo</small></td>
+    <td>{{ r.due|date }}</td>
+    <td><small>{{ r.asked_at|ago }}</small></td>
+    <td class="r"><div class="actions" style="justify-content:flex-end">
+      <form method="post" action="/admin/renewals/{{ r.id }}/paid">{{ m.csrf_field(csrf) }}<button class="btn small primary" type="submit">Paid</button></form>
+      <form method="post" action="/admin/renewals/{{ r.id }}/not_paid">{{ m.csrf_field(csrf) }}<button class="btn small danger" type="submit" data-confirm="Close {{ r.user.username }}'s account? Copying stops and they can't log in.">Not paid</button></form>
+    </div></td>
+  </tr>
+  {% endfor %}
+</table></div>

@@ -1,0 +1,53 @@
+{% extends "admin/base.html" %}
+{% block title %}Accounts{% endblock %}
+{% block content %}
+<div class="pagehead"><div><h1>Accounts</h1>
+  <p>Every customer MT5 account: size, profit and loss, open trades and the groups it copies. <b>Total</b> is everything on the account; <small>copied</small> is only PipsFarmer's trades. "Today" is the broker's trading day.</p></div>
+  <div class="actions"><a class="btn" href="/admin/accounts.xlsx">Download Excel</a></div></div>
+
+{% if tots %}
+<div class="panel" style="margin-bottom:18px"><div class="figures">
+  {% for t in tots %}
+  <div><span>{{ t.cur }} balance · {{ t.accounts }} account{{ "s" if t.accounts != 1 }}</span><b class="num">{{ t.balance|money(t.cur) }}</b></div>
+  <div><span>{{ t.cur }} equity</span><b class="num">{{ t.equity|money(t.cur) }}</b></div>
+  <div><span>{{ t.cur }} today</span><b>{{ m.pnl(t.today, t.cur) }}</b></div>
+  <div><span>{{ t.cur }} 30 days</span><b>{{ m.pnl(t.month, t.cur) }}</b></div>
+  {% endfor %}
+</div></div>
+{% endif %}
+
+<section class="panel">
+  <form method="get" class="actions" style="margin-bottom:14px">
+    <input type="text" name="q" value="{{ q }}" placeholder="Search customer, login or server" style="max-width:260px">
+    <select name="status" style="max-width:160px"><option value="">Any status</option>{% for v in ["online", "starting", "waiting", "error", "stopped"] %}<option value="{{ v }}" {{ 'selected' if status == v }}>{{ v|capitalize }}</option>{% endfor %}</select>
+    <select name="sort" style="max-width:170px">{% for v, l in [("id", "Newest first"), ("balance", "Biggest balance"), ("today", "Best today"), ("month", "Best 30 days"), ("all", "Best all time"), ("worst", "Worst 30 days")] %}<option value="{{ v }}" {{ 'selected' if sort == v }}>{{ l }}</option>{% endfor %}</select>
+    <button class="btn" type="submit">Show</button>
+  </form>
+  <div class="table-wrap"><table>
+    <tr><th>Customer</th><th>Account</th><th>Status</th><th class="r">Balance</th><th class="r">Equity</th><th class="r">Open</th>
+        <th class="r">Today</th><th class="r">7 days</th><th class="r">30 days</th><th class="r">All time</th><th>Groups</th></tr>
+    {% for r in rows %}
+    <tr data-href="/admin/accounts/{{ r.id }}">
+      <td><a href="/admin/users/{{ r.user_id }}">{{ r.user }}</a><br><small>{{ r.plan }}</small></td>
+      <td><a href="/admin/accounts/{{ r.id }}">{{ r.login }}</a><br><small>{{ r.server }}</small></td>
+      <td>{{ m.status(r.account) }}{% if not r.copy %}<br><small>copying paused</small>{% endif %}{% if r.error %}<br><small class="down">{{ r.error[:80] }}</small>{% endif %}</td>
+      <td class="r num">{{ r.balance|money(r.cur) }}</td>
+      <td class="r num">{{ r.equity|money(r.cur) }}</td>
+      <td class="r num">{{ r.open }}{% if r.own_open %} <small>+{{ r.own_open }} own</small>{% endif %}<br><small>{{ m.pnl(r.floating, r.cur) }}</small></td>
+      {% for p in ["today", "week", "month", "all"] %}
+      <td class="r num">{{ m.pnl(r.pnl[p].total, r.cur) }}<br><small>copied {{ m.pnl(r.pnl[p].copied, r.cur) }}</small></td>
+      {% endfor %}
+      <td><small>{{ r.groups|join(", ") or "none" }}</small></td>
+    </tr>
+    {% else %}<tr><td colspan="11" class="muted">No accounts match.</td></tr>{% endfor %}
+  </table></div>
+</section>
+
+{% if vip %}
+<section class="panel">
+  <h2>Groups in PipsFarmer VIP</h2>
+  <p class="muted">Every account that follows PipsFarmer VIP copies all of these. Change them in Admin → Telegram.</p>
+  <p>{{ vip|join(" · ") }}</p>
+</section>
+{% endif %}
+{% endblock %}

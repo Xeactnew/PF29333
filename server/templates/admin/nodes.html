@@ -1,0 +1,126 @@
+{% extends "admin/base.html" %}
+{% block title %}Servers{% endblock %}
+{% block content %}
+<div class="pagehead"><div><span class="eyebrow">// infrastructure</span><h1>Servers</h1><p>Each Windows VPS runs one MT5 per customer account. {{ cap.in_use }} of {{ cap.total }} slots used on {{ cap.online }} online VPS{% if cap.waiting %}, <b class="down">{{ cap.waiting }} waiting</b>{% endif %}.</p></div></div>
+
+{% if install %}
+<section class="panel glow" style="margin-bottom:18px">
+  <h2>Install {{ install[0] }}</h2>
+  <p>On the new Windows VPS (once, through Windows App / Remote Desktop): right-click Start → <b>Terminal (Admin)</b> or <b>PowerShell (Admin)</b>, paste this and press Enter. It installs Python, MT5 and the node, asks for the VPS's Windows password once for auto-login, and starts. The link works for 48 hours.</p>
+  <div class="secret">powershell -ExecutionPolicy Bypass -Command "irm {{ base }}/api/install/{{ install[1] }}.ps1 | iex"</div>
+  {% if local_base %}<div class="flash warn" style="margin-top:12px">You're on this VPS's local address, so the command points at localhost and won't work on another VPS. Set your website address in Admin → System (or open admin through your domain) and make a new key.</div>{% endif %}
+  {% if new_token %}<details style="margin-top:12px"><summary class="muted">Manual setup key</summary><div class="secret" style="margin-top:8px">{{ new_token[1] }}</div></details>{% endif %}
+</section>
+{% elif new_token %}
+<section class="panel glow" style="margin-bottom:18px">
+  <h2>Node key for {{ new_token[0] }}</h2>
+  <p class="muted">Shown once. Put it in <code>node.json</code> on that VPS as <code>node_token</code>.</p>
+  <div class="secret">{{ new_token[1] }}</div>
+</section>
+{% endif %}
+
+{% if cap.waiting %}
+<div class="flash err">Customers are waiting for a slot. Add a VPS below, or raise the slot limit on a VPS that has spare RAM.</div>
+{% endif %}
+
+<div class="stack">
+{% for n in cap.nodes %}
+{% set i = n.info or {} %}
+<section class="panel node">
+  <div class="panel-head">
+    <h2>{{ n.name }} <small class="mono">{{ i.hostname or "" }}</small></h2>
+    <span class="pill {{ 'online' if online(n) else 'error' }}">{{ "Online" if online(n) else "Offline" }} · {{ n.last_seen|ago }}</span>
+  </div>
+  <div class="figures">
+    <div><span>Accounts</span><b class="num">{{ cap.used.get(n.id, 0) }} / {{ n.max_slots }}</b></div>
+    <div><span>CPU</span><b class="num">{{ i.cpu if i.cpu is not none else "–" }}%</b></div>
+    <div><span>RAM</span><b class="num">{{ i.ram if i.ram is not none else "–" }}%</b>{% if i.ram_total_gb %}<small> of {{ i.ram_total_gb }} GB</small>{% endif %}</div>
+    <div><span>Disk free</span><b class="num">{{ i.disk_free_gb if i.disk_free_gb is not none else "–" }} GB</b></div>
+    <div><span>Up for</span><b class="num">{{ ((i.uptime_h / 24)|round(1) ~ " d") if i.uptime_h else "–" }}</b></div>
+  </div>
+  <div class="checks">
+    <span class="pill {{ 'online' if i.autologon else 'error' if i.autologon is false else 'plain' }}">Auto-login {{ "on" if i.autologon else "off" if i.autologon is false else "unknown" }}</span>
+    <span class="pill {{ 'online' if i.node_hash == pkg_hash else 'waiting' }}">{{ "Up to date" if i.node_hash == pkg_hash else "Updating" if i.node_hash else "Old version" }} <span class="mono">v{{ i.version or "?" }}</span></span>
+    {% if i.reboot_pending %}<span class="pill waiting">Windows update waiting (restarts Saturday)</span>{% endif %}
+    {% if i.folders_locked %}<span class="pill online">Customer folders locked</span>{% elif i.folders_locked is false %}<span class="pill waiting">Customer folders not locked</span>{% endif %}
+    {% if i.template_has_login %}<span class="pill error">Base MT5 has a saved login</span>{% endif %}
+    {% if i.base_ready %}<span class="pill online">Ready-made MT5 (fast first start)</span>{% elif i.base_ready is false %}<span class="pill waiting">Preparing ready-made MT5</span>{% endif %}
+    {% if i.servers_size %}<span class="pill plain">Broker list {{ (i.servers_size // 1024) }} KB</span>{% endif %}
+    {% if i.elevated is false %}<span class="pill error">Not running as administrator</span>{% endif %}
+    {% if i.last_result %}<span class="pill plain">Last: {{ i.last_result }}</span>{% endif %}
+  </div>
+
+  <div class="grid g2" style="margin-top:14px">
+    <form id="nf{{ n.id }}" method="post" action="/admin/nodes/{{ n.id }}">
+      {{ m.csrf_field(csrf) }}
+      <div class="fields">
+        <div class="field"><label>Name</label><input name="name" type="text" value="{{ n.name }}"></div>
+        <div class="field"><label>Slots</label><input name="max_slots" type="number" min="0" max="200" value="{{ n.max_slots }}"></div>
+      </div>
+      <div class="actions">
+        <label class="check" style="margin:0"><input type="checkbox" name="enabled" {{ 'checked' if n.enabled }}> <span>On</span></label>
+        <button class="btn small" type="submit">Save</button>
+        <button class="btn small" name="action" value="restart_all" data-confirm="Restart every MT5 on {{ n.name }}?">Restart MT5s</button>
+        <button class="btn small" name="action" value="reboot" data-confirm="Restart Windows on {{ n.name }}? Trading pauses for a few minutes.">Restart VPS</button>
+        <button class="btn small" name="action" value="token" data-confirm="Make a new key? The old one stops working.">New key</button>
+      </div>
+    </form>
+    {% if not i.autologon %}
+    <form method="post" action="/admin/nodes/{{ n.id }}">
+      {{ m.csrf_field(csrf) }}<input type="hidden" name="action" value="autologon">
+      <p class="muted" style="font-size:13.5px;margin-bottom:8px">Turn on auto-login so MT5 comes back by itself after any restart. The password goes straight to the VPS and isn't saved by the website.</p>
+      <div class="fields">
+        <div class="field"><label>Windows user</label><input name="win_user" type="text" placeholder="Administrator"></div>
+        <div class="field"><label>Windows password</label><input name="win_password" type="password" autocomplete="off"></div>
+      </div>
+      <button class="btn small primary" type="submit">Turn on auto-login</button>
+    </form>
+    {% endif %}
+  </div>
+  {% if i.log_tail %}<details style="margin-top:12px"><summary class="muted">Node log</summary><pre class="log">{{ i.log_tail }}</pre></details>{% endif %}
+</section>
+{% else %}<section class="panel"><p class="muted">No servers yet. Add your first VPS below.</p></section>{% endfor %}
+
+<div class="grid g-side">
+<section class="panel">
+  {% if waiting %}
+  <h2>Waiting for a slot</h2>
+  <table><tr><th>Customer</th><th>Account</th><th>Waiting</th></tr>
+    {% for a in waiting %}<tr><td><a href="/admin/users/{{ a.user.id }}">{{ a.user.username }}</a></td><td>{{ a.login }}@{{ a.server }}</td><td>{{ a.waiting_since|ago }}</td></tr>{% endfor %}
+  </table>
+  {% else %}
+  <h2>How it runs by itself</h2>
+  <ul class="ticks">
+    <li>Customers add their MT5 on the website. The VPS copies MT5 for them and logs in; unknown broker servers are looked up automatically.</li>
+    <li>Crashed MT5s restart by themselves. After a reboot the VPS logs itself in and everything starts again.</li>
+    <li>Windows updates restart the VPS only on Saturday, when gold is closed.</li>
+    <li>Update the website in Admin → System and every VPS updates itself.</li>
+    <li>The bot tells you when a VPS goes offline, fills up, runs low on disk, or an account can't log in.</li>
+  </ul>
+  {% endif %}
+  <p class="muted" style="margin-top:14px">Rough guide: each MT5 uses 150–250 MB of RAM. A 4 GB VPS handles about 10–12 accounts, an 8 GB VPS about 25, 12 GB about 35.</p>
+</section>
+
+<section class="panel">
+  <h2>Add a VPS</h2>
+  <form method="post" action="/admin/nodes/create">
+    {{ m.csrf_field(csrf) }}
+    <div class="field"><label for="nn">Name</label><input id="nn" name="name" type="text" required placeholder="VPS 2 London"></div>
+    <div class="field"><label for="ns">Accounts it can run</label><input id="ns" name="max_slots" type="number" min="1" max="200" value="20"></div>
+    <button class="btn primary" type="submit">Add VPS and get its install command</button>
+  </form>
+  <p class="muted" style="margin-top:14px">You get one command to paste on the new VPS. That's the only time you need to connect to it.</p>
+</section>
+
+<section class="panel">
+  <h2>Brokers MT5 knows</h2>
+  <p class="muted">MT5 needs to learn each broker once. When a customer's account says MT5 couldn't find their server and the name is right:</p>
+  <ol class="muted" style="padding-left:18px;margin:8px 0 0">
+    <li>On any VPS, double-click <b>PipsFarmer - add a broker</b> on the desktop.</li>
+    <li>File → Open an Account, search the broker's name, then click Cancel.</li>
+    <li>Close MT5. Every VPS learns the broker within a few minutes, and waiting accounts connect by themselves.</li>
+  </ol>
+</section>
+</div>
+</div>
+{% endblock %}

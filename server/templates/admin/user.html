@@ -1,0 +1,133 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ user.username }}{% endblock %}
+{% block content %}
+<div class="pagehead">
+  <div><h1>{{ user.username }}</h1>
+    <p>{{ m.plan_tag(user.plan) }} &nbsp;{{ m.billing(user) }} &nbsp;{{ m.user_status(user) }}{% if user.expires_at %} &nbsp;<span class="pill waiting">Access until {{ user.expires_at|date }}</span>{% endif %}</p></div>
+  <div class="actions">
+    {% if user.status == "closed" %}
+      <form method="post" action="/admin/users/{{ user.id }}/reopen">{{ m.csrf_field(csrf) }}<button class="btn primary" type="submit">Reopen account</button></form>
+    {% else %}
+      <form method="post" action="/admin/users/{{ user.id }}/close">{{ m.csrf_field(csrf) }}<input type="hidden" name="reason" value="cancelled by admin">
+        <button class="btn danger" type="submit" data-confirm="Cancel {{ user.username }}? They can't log in and copying stops on all their accounts.">Cancel account</button></form>
+    {% endif %}
+  </div>
+</div>
+
+{% if new_login %}
+<section class="panel" style="border-color:var(--gold);margin-bottom:18px">
+  <h2>Login details to send them</h2>
+  <p class="muted">Shown once. Copy it now.</p>
+  <div class="secret">Site: {{ request.base_url }}login
+Username: {{ new_login[0] }}
+Password: {{ new_login[1] }}</div>
+</section>
+{% endif %}
+
+<div class="panel"><div class="figures">
+  <div><span>Last seen</span><b>{{ user.last_seen|ago }}</b></div>
+  <div><span>Logins (30 days)</span><b class="num">{{ summary.logins_30d }}</b></div>
+  <div><span>Trades (30 days)</span><b class="num">{{ summary.trades_30d }}</b></div>
+  <div><span>Profit (30 days)</span><b>{{ m.pnl(summary.pnl_30d) }}</b></div>
+  <div><span>MT5 online</span><b class="num">{{ summary.online }} / {{ summary.accounts }}</b></div>
+  <div><span>Customer since</span><b>{{ user.created_at|date }}</b></div>
+</div></div>
+
+<div class="grid g-side" style="margin-top:18px">
+<div class="stack">
+  <section class="panel">
+    <h2>MT5 accounts</h2>
+    {% if accounts %}
+    <div class="table-wrap"><table>
+      <tr><th>Account</th><th>Status</th><th>Server</th><th class="r">Balance</th><th class="r">Equity</th><th>Copying</th></tr>
+      {% for a in accounts %}
+      <tr data-href="/admin/accounts/{{ a.id }}">
+        <td><a href="/admin/accounts/{{ a.id }}">{{ a.label or a.login }}</a><br><small>{{ a.login }}@{{ a.server }}</small>{% if a.removed %} <small class="down">removed</small>{% endif %}</td>
+        <td>{{ m.status(a) }}</td><td><small>{{ a.node.name if a.node else "none" }}</small></td>
+        <td class="r num">{{ a.balance|money(a.currency) }}</td><td class="r num">{{ a.equity|money(a.currency) }}</td>
+        <td>{{ "On" if a.copy_enabled else "Paused" }}</td>
+      </tr>
+      {% endfor %}
+    </table></div>
+    {% else %}<p class="muted">They haven't added an MT5 account yet.</p>{% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Results</h2>
+    <div class="figures">
+      <div><span>Today</span><b>{{ m.pnl(stats.periods.today) }}</b></div>
+      <div><span>Week</span><b>{{ m.pnl(stats.periods.week) }}</b></div>
+      <div><span>Month</span><b>{{ m.pnl(stats.periods.month) }}</b></div>
+      <div><span>All time</span><b>{{ m.pnl(stats.periods.all) }}</b></div>
+      <div><span>Win rate</span><b class="num">{{ stats.win_rate }}%</b></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Activity</h2>
+    <div class="table-wrap"><table>
+      {% for a in acts %}<tr><td><small>{{ a.time|date("%d %b %H:%M") }}</small></td><td>{{ a.action.replace("_", " ") }}</td><td><small>{{ a.detail[:80] }}</small></td><td><small>{{ a.actor }}{% if a.ip %} {{ a.ip }}{% endif %}</small></td></tr>
+      {% else %}<tr><td class="muted">Nothing yet.</td></tr>{% endfor %}
+    </table></div>
+  </section>
+</div>
+
+<div class="stack">
+  <section class="panel">
+    <h2>Plan</h2>
+    <form method="post" action="/admin/users/{{ user.id }}/plan">
+      {{ m.csrf_field(csrf) }}
+      <div class="field"><label for="pl">Plan</label><select id="pl" name="plan_id">{% for p in plans %}<option value="{{ p.id }}" {{ 'selected' if p.id == user.plan_id }}>{{ p.name }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="bl">Billing</label><select id="bl" name="billing">{% for v, l in [("monthly", "Monthly"), ("lifetime", "Lifetime"), ("free", "Free")] %}<option value="{{ v }}" {{ 'selected' if user.billing == v }}>{{ l }}</option>{% endfor %}</select></div>
+      <div class="field" data-monthly><label for="pu">Paid until</label><input id="pu" name="paid_until" type="date" value="{{ user.paid_until.strftime('%Y-%m-%d') if user.paid_until else '' }}"></div>
+      <div class="field"><label for="tl">Time limit</label><select id="tl" name="time_limit" data-limit>
+        <option value="keep">{{ "Keep: until " ~ (user.expires_at|date) if user.expires_at else "Keep: no time limit" }}</option>
+        {% for v, l in time_limits %}<option value="{{ v }}">{{ l }}{% if v not in ("none", "date") %} from today{% endif %}</option>{% endfor %}</select></div>
+      <div class="field" data-limit-date hidden><label for="te">Access until</label><input id="te" name="expires_on" type="date" value="{{ user.expires_at.strftime('%Y-%m-%d') if user.expires_at else '' }}"></div>
+      <button class="btn primary" type="submit">Save plan</button>
+    </form>
+    <form method="post" action="/admin/users/{{ user.id }}/remind" style="margin-top:12px">{{ m.csrf_field(csrf) }}
+      <button class="btn small" type="submit" {{ 'disabled' if not user.email }}>Email them a payment reminder</button>
+      {% if not user.email %}<small class="muted"> no email on file</small>{% endif %}</form>
+  </section>
+
+  {% if requests %}
+  <section class="panel">
+    <h2>Plan requests</h2>
+    {% for r in requests %}<p style="margin:0 0 6px">PF-{{ r.id }} {{ r.plan.name }} {{ r.billing }} · {{ r.created_at|date }}: <span class="pill {{ 'waiting' if r.status == 'pending' else 'online' if r.status == 'approved' else 'plain' }}">{{ r.status }}</span>{% if r.handled_by %} <small>by {{ r.handled_by }}</small>{% endif %}</p>{% endfor %}
+  </section>
+  {% endif %}
+
+  <section class="panel">
+    <h2>Renewals</h2>
+    {% for r in renewals %}<p style="margin:0 0 6px">{{ r.due|date }}: <span class="pill {{ r.status }}">{{ r.status.replace("_", " ")|capitalize }}</span>{% if r.answered_by %} <small>by {{ r.answered_by }}</small>{% endif %}</p>
+    {% else %}<p class="muted">No renewals yet.</p>{% endfor %}
+  </section>
+
+  <section class="panel">
+    <h2>Extra channels</h2>
+    {% for c in channels %}<p style="margin:0 0 6px">{{ c.title }} {% if not c.active %}<small>(off)</small>{% endif %}</p>{% else %}<p class="muted">None.</p>{% endfor %}
+    {% if user.tg_name %}<p class="muted">Telegram linked as {{ user.tg_name }}.</p>{% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Reset password</h2>
+    <form method="post" action="/admin/users/{{ user.id }}/password" autocomplete="off">
+      {{ m.csrf_field(csrf) }}
+      <div class="field"><input name="password" type="text" placeholder="Leave blank to generate one"></div>
+      <button class="btn" type="submit">Reset password</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Notes</h2>
+    <form method="post" action="/admin/users/{{ user.id }}/notes">
+      {{ m.csrf_field(csrf) }}
+      <div class="field"><label for="em">Email</label><input id="em" name="email" type="email" value="{{ user.email }}"></div>
+      <div class="field"><label for="nt">Private notes</label><textarea id="nt" name="notes" placeholder="How they paid, Telegram handle...">{{ user.notes }}</textarea></div>
+      <button class="btn" type="submit">Save notes</button>
+    </form>
+  </section>
+</div>
+</div>
+{% endblock %}

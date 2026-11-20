@@ -1,0 +1,58 @@
+{% import "_macros.html" as m %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="{{ site }} Admin">
+<meta name="format-detection" content="telephone=no">
+<meta name="robots" content="noindex">
+{{ icon_tags(admin=True)|safe }}
+<title>{% block title %}Admin{% endblock %} | {{ site }} admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>/* safe even if an old copy of style.css is cached */.ico{width:22px;height:22px}.appbar,.tabbar,.sheet{display:none}</style>
+<link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+<style>.rail .badge{float:right;background:var(--rust);color:#fff;border-radius:99px;padding:0 7px;font-size:12px}</style>
+</head>
+<body>
+{% block body %}
+<div class="shell">
+  <nav class="rail" aria-label="Admin">
+    <a class="wordmark" href="/admin">{{ m.logo() }}Admin</a>
+    {% for href, label in [("/admin", "Overview"), ("/admin/users", "Customers"), ("/admin/accounts", "Accounts"), ("/admin/renewals", "Renewals"), ("/admin/nodes", "Servers"), ("/admin/signals", "Signals"), ("/admin/plans", "Plans"), ("/admin/support", "Support"), ("/admin/telegram", "Telegram"), ("/admin/activity", "Activity"), ("/admin/settings", "Settings"), ("/admin/system", "System")] %}
+      <a class="nav {{ 'on' if path == href or (href != '/admin' and path.startswith(href)) }}" href="{{ href }}">{{ label }}</a>
+    {% endfor %}
+    <div class="foot">
+      <div class="who">Signed in as {{ admin.username }}</div>
+      <form method="post" action="/admin/logout">{{ m.csrf_field(csrf) }}<button class="btn link" type="submit">Log out</button></form>
+    </div>
+  </nav>
+  <header class="appbar">
+    <a class="wordmark" href="/admin">{{ brand_logo(26) }}Admin</a>
+    <form method="post" action="/admin/logout">{{ m.csrf_field(csrf) }}<button class="appbar-btn text" type="submit">Log out</button></form>
+  </header>
+  <main class="main">
+    {{ m.flashes(flashes) }}
+    {% block content %}{% endblock %}
+  </main>
+  {% set more = [("/admin/renewals", "Renewals"), ("/admin/nodes", "Servers"), ("/admin/plans", "Plans"), ("/admin/support", "Support"), ("/admin/telegram", "Telegram"), ("/admin/activity", "Activity"), ("/admin/settings", "Settings"), ("/admin/system", "System")] %}
+  <div class="sheet" id="more-sheet" hidden>
+    <div class="sheet-card" role="dialog" aria-label="More admin pages">
+      {% for href, label in more %}<a class="sheet-link {{ 'on' if path.startswith(href) }}" href="{{ href }}">{{ label }}</a>{% endfor %}
+    </div>
+  </div>
+  <nav class="tabbar" aria-label="Admin">
+    {% for href, label, ico in [("/admin", "Overview", "home"), ("/admin/accounts", "Accounts", "accounts"), ("/admin/signals", "Signals", "signals"), ("/admin/users", "Customers", "customers")] %}
+      <a class="tab {{ 'on' if path == href or (href != '/admin' and path.startswith(href)) }}" href="{{ href }}">{{ m.icon(ico) }}<span>{{ label }}</span></a>
+    {% endfor %}
+    {% set more_on = namespace(v=False) %}{% for href, _ in more %}{% if path.startswith(href) %}{% set more_on.v = True %}{% endif %}{% endfor %}
+    <button class="tab {{ 'on' if more_on.v }}" type="button" data-sheet="more-sheet" aria-expanded="false">{{ m.icon("more") }}<span>More</span></button>
+  </nav>
+</div>
+{% endblock %}
+<script src="/static/app.js?v={{ asset_v }}"></script>
+</body>
+</html>

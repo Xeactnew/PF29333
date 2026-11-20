@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="public">
+  <header class="public-top">
+    <a class="wordmark" href="/">{{ m.logo(30) }}{{ site }}</a>
+    <div class="actions">
+      <a class="btn" href="/login">Log in</a>
+      {% if allow_signup %}<a class="btn primary" href="/signup">Start free</a>{% endif %}
+    </div>
+  </header>
+
+  <section class="hero">
+    <div>
+      <span class="eyebrow">// automated gold copy-trading</span>
+      <h1>Gold signals, <em>executed on your MT5</em> while you're busy.</h1>
+      <p>{{ site }} copies the VIP group's gold trades straight onto your account, moves your stop to breakeven at TP1, and stops for the day when you hit your loss or profit limit.</p>
+      <div class="actions">
+        {% if allow_signup %}<a class="btn primary" href="/signup">Create a free account</a>{% endif %}
+        <a class="btn" href="#plans">Compare plans</a>
+      </div>
+    </div>
+    <div class="ticket" aria-label="Example signal">
+      <div class="row"><b class="side buy">Buy gold</b><b>4037 – 4030</b></div>
+      <div class="row"><span>Placed on your account</span><b>3 layers, 1% risk</b></div>
+      <div class="row"><span>TP1 4047</span><b class="hit">Hit, stop moved to entry</b></div>
+      <div class="row"><span>TP2 4057</span><b class="hit">Hit</b></div>
+      <div class="row"><span>TP3 4067</span><b>Running</b></div>
+    </div>
+  </section>
+
+  <section id="plans">
+    <h2>Plans</h2>
+    <p class="muted">Pay us directly, monthly or once for lifetime access. We switch your plan as soon as payment lands.</p>
+    {% include "_plan_cards.html" %}
+  </section>
+  <footer class="public-foot"><a href="/terms">Terms of use</a> · Trade ideas are not financial advice. Trading carries risk.</footer>
+</div>
+{% endblock %}

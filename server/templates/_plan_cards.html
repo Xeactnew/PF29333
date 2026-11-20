@@ -1,0 +1,43 @@
+<div class="plans">
+{% for p in plans %}
+  {% set f = p.features %}
+  <div class="plan-card {{ 'featured' if p.key == 'pro' }}">
+    <h3>{{ p.name }} {% if current_plan_id is defined and current_plan_id == p.id %}<span class="pill active">Your plan</span>{% endif %}</h3>
+    {% if p.monthly_price or p.lifetime_price %}
+      <div class="price">{{ p.currency }}{{ '%g'|format(p.monthly_price) }}<small> a month</small></div>
+      <small>or {{ p.currency }}{{ '%g'|format(p.lifetime_price) }} once for lifetime</small>
+    {% else %}
+      <div class="price">Free</div><small>No card, no time limit</small>
+    {% endif %}
+    <ul>
+      <li>{{ f.max_accounts if f.max_accounts < 999 else "Unlimited" }} MT5 account{{ "s" if f.max_accounts != 1 }}</li>
+      <li>{{ site }} VIP signals</li>
+      <li class="{{ 'no' if not f.max_channels }}">{% if f.max_channels >= 999 %}Unlimited extra Telegram channels{% elif f.max_channels %}{{ f.max_channels }} extra Telegram channels{% else %}No extra channels{% endif %}</li>
+      <li class="{{ 'no' if not f.breakeven }}">Breakeven at TP1</li>
+      <li class="{{ 'no' if not f.manual_signals }}">Manual signals</li>
+      <li class="{{ 'no' if not f.risk_modes }}">Risk % sizing</li>
+      <li class="{{ 'no' if f.max_layers <= 1 }}">{{ "Up to " ~ f.max_layers ~ " layers" if f.max_layers > 1 else "Single entry" }}</li>
+      <li class="{{ 'no' if not f.daily_limits }}">Daily loss and profit limits</li>
+      <li class="{{ 'no' if not f.news_protection }}">News protection</li>
+      <li class="{{ 'no' if not f.signal_filters }}">Choose which signals it takes</li>
+      <li class="{{ 'no' if not f.smart_entry }}">Smart entry</li>
+    </ul>
+    {% if p.monthly_price or p.lifetime_price %}
+    <div class="plan-actions">
+      {% if choose is defined and choose %}
+        {% if not (current_plan_id is defined and current_plan_id == p.id and user.billing == "lifetime") %}
+        <form method="post" action="/plan/request"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="plan_id" value="{{ p.id }}">
+          {% if p.monthly_price %}<button class="btn {{ 'primary' if p.key == 'pro' }}" name="billing" value="monthly">Get monthly</button>{% endif %}
+          {% if p.lifetime_price %}<button class="btn" name="billing" value="lifetime">Get lifetime</button>{% endif %}
+        </form>
+        {% endif %}
+      {% else %}
+        <a class="btn {{ 'primary' if p.key == 'pro' }}" href="/signup?plan={{ p.key }}&billing=monthly">Get {{ p.name }}</a>
+      {% endif %}
+    </div>
+    {% elif choose is not defined %}
+    <div class="plan-actions"><a class="btn" href="/signup?plan={{ p.key }}">Start free</a></div>
+    {% endif %}
+  </div>
+{% endfor %}
+</div>

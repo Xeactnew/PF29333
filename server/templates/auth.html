@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ "Create account" if mode == "signup" else "Log in" }} | {{ site }}{% endblock %}
+{% block body %}
+<div class="auth">
+  <a class="wordmark" href="/">{{ m.logo(30) }}{{ site }}</a>
+  <div class="panel">
+    <h1>{{ "Create your free account" if mode == "signup" else "Log in" }}</h1>
+    {% if error %}<div class="flash err" role="alert">{{ error }}</div>{% endif %}
+    {{ m.flashes(flashes) }}
+    <form method="post" action="/{{ mode }}">
+      {{ m.csrf_field(csrf) }}
+      <div class="field"><label for="u">Username</label><input id="u" name="username" type="text" autocomplete="username" required value="{{ username or '' }}" autofocus></div>
+      {% if mode == "signup" %}
+      <div class="field"><label for="e">Email</label><input id="e" name="email" type="email" autocomplete="email" required value="{{ email or '' }}">
+        <div class="hint">For payment reminders and support replies only.</div></div>
+      {% endif %}
+      <div class="field"><label for="p">Password</label><input id="p" name="password" type="password" autocomplete="{{ 'new-password' if mode == 'signup' else 'current-password' }}" required minlength="{{ 8 if mode == 'signup' else 1 }}"></div>
+      {% if mode == "signup" and plans %}
+      <div class="fields">
+        <div class="field"><label for="pl">Plan</label><select id="pl" name="plan">
+          {% for p in plans %}<option value="{{ p.key }}" {{ 'selected' if p.key == want_plan }}>{{ p.name }}{% if p.monthly_price %} ({{ p.currency }}{{ '%g'|format(p.monthly_price) }}/mo){% else %} (free){% endif %}</option>{% endfor %}
+        </select></div>
+        <div class="field"><label for="bl">Paying</label><select id="bl" name="billing">
+          <option value="monthly" {{ 'selected' if want_billing != 'lifetime' }}>Monthly</option>
+          <option value="lifetime" {{ 'selected' if want_billing == 'lifetime' }}>Once, lifetime</option>
+        </select></div>
+      </div>
+      <p class="muted" style="font-size:13px;margin-top:-4px">Paid plans: we take crypto or bank transfer through Telegram after you sign up. You start on the free plan and we switch you over when the payment lands.</p>
+      {% endif %}
+      {% if mode == "signup" %}<p class="muted" style="font-size:12.5px">By creating an account you agree to the <a href="/terms" target="_blank">terms of use</a>.</p>{% endif %}
+      <button class="btn primary" type="submit" style="width:100%">{{ "Create account" if mode == "signup" else "Log in" }}</button>
+    </form>
+    <p class="muted" style="margin:16px 0 0">{% if mode == "signup" %}Already have one? <a href="/login">Log in</a>{% else %}New here? <a href="/signup">Create an account</a>{% endif %} · <a href="/help">Need help?</a></p>
+  </div>
+</div>
+{% endblock %}

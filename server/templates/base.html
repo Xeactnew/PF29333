@@ -1,0 +1,51 @@
+{% import "_macros.html" as m %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="{{ site }}{% block app_suffix %}{% endblock %}">
+<meta name="format-detection" content="telephone=no">
+{{ icon_tags()|safe }}
+<title>{% block title %}{{ site }}{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>/* safe even if an old copy of style.css is cached */.ico{width:22px;height:22px}.appbar,.tabbar,.sheet{display:none}</style>
+<link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+</head>
+<body>
+{% block body %}
+<div class="shell">
+  <nav class="rail" aria-label="Main">
+    <a class="wordmark" href="/dashboard">{{ m.logo() }}{{ site }}</a>
+    {% for href, label in [("/dashboard", "Overview"), ("/accounts", "MT5 accounts"), ("/signals", "Signals"), ("/channels", "Channels"), ("/plan", "Plan & login"), ("/support", "Support")] %}
+      <a class="nav {{ 'on' if path == href or (href != '/dashboard' and path.startswith(href)) }}" href="{{ href }}">{{ label }}</a>
+    {% endfor %}
+    <div class="foot">
+      <div class="who">{{ user.username }} {{ m.plan_tag(user.plan) }}</div>
+      <form method="post" action="/logout">{{ m.csrf_field(csrf) }}<button class="btn link" type="submit">Log out</button></form>
+    </div>
+  </nav>
+  <header class="appbar" aria-hidden="false">
+    <a class="wordmark" href="/dashboard">{{ brand_logo(26) }}{{ site }}</a>
+    <a class="appbar-btn" href="/support" aria-label="Support">{{ m.icon("support") }}</a>
+    <form method="post" action="/logout">{{ m.csrf_field(csrf) }}<button class="appbar-btn text" type="submit">Log out</button></form>
+  </header>
+  <main class="main">
+    {% if not user.email %}<div class="flash warn">Add your email in <a href="/plan">Plan &amp; login</a> so we can send payment reminders and support replies.</div>{% endif %}
+    {% if user.status == "payment_check" %}<div class="flash warn">We're checking your monthly payment. Copying keeps running in the meantime.</div>{% endif %}
+    {{ m.flashes(flashes) }}
+    {% block content %}{% endblock %}
+  </main>
+  <nav class="tabbar" aria-label="Main">
+    {% for href, label, ico in [("/dashboard", "Home", "home"), ("/accounts", "Accounts", "accounts"), ("/signals", "Signals", "signals"), ("/channels", "Channels", "channels"), ("/plan", "Plan", "plan")] %}
+      <a class="tab {{ 'on' if path == href or (href != '/dashboard' and path.startswith(href)) }}" href="{{ href }}">{{ m.icon(ico) }}<span>{{ label }}</span></a>
+    {% endfor %}
+  </nav>
+</div>
+{% endblock %}
+<script src="/static/app.js?v={{ asset_v }}"></script>
+</body>
+</html>

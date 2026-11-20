@@ -1,0 +1,49 @@
+{% extends "admin/base.html" %}
+{% block title %}Customers{% endblock %}
+{% block content %}
+<div class="pagehead"><div><h1>Customers</h1><p>{{ users|length }} shown. Click a row to see their accounts and activity.</p></div></div>
+
+<div class="grid g-side">
+<section class="panel">
+  <form method="get" class="actions" style="margin-bottom:14px">
+    <input type="text" name="q" value="{{ q }}" placeholder="Search username or email" style="max-width:240px">
+    <select name="plan" style="max-width:150px"><option value="">Any plan</option>{% for p in plans %}<option value="{{ p.key }}" {{ 'selected' if plan == p.key }}>{{ p.name }}</option>{% endfor %}</select>
+    <select name="status" style="max-width:170px"><option value="">Any status</option>{% for v, l in [("active", "Active"), ("payment_check", "Payment check"), ("closed", "Closed")] %}<option value="{{ v }}" {{ 'selected' if status == v }}>{{ l }}</option>{% endfor %}</select>
+    <button class="btn" type="submit">Filter</button>
+  </form>
+  <div class="table-wrap"><table>
+    <tr><th>Customer</th><th>Plan</th><th>Billing</th><th>Status</th><th>Last seen</th><th class="r">Logins 30d</th><th class="r">Trades 30d</th><th class="r">MT5</th></tr>
+    {% for u in users %}{% set a = activity[u.id] %}
+    <tr data-href="/admin/users/{{ u.id }}">
+      <td><a href="/admin/users/{{ u.id }}">{{ u.username }}</a>{% if u.email %}<br><small>{{ u.email }}</small>{% endif %}</td>
+      <td>{{ m.plan_tag(u.plan) }}</td>
+      <td><small>{{ m.billing(u) }}{% if u.expires_at %}<br>until {{ u.expires_at|date }}{% endif %}</small></td>
+      <td>{{ m.user_status(u) }}</td>
+      <td><small>{{ u.last_seen|ago }}</small></td>
+      <td class="r num">{{ a.logins_30d }}</td>
+      <td class="r num">{{ a.trades_30d }}</td>
+      <td class="r num">{{ a.online }}/{{ a.accounts }}</td>
+    </tr>
+    {% else %}<tr><td colspan="8" class="muted">No customers match.</td></tr>{% endfor %}
+  </table></div>
+</section>
+
+<section class="panel" id="new">
+  <h2>Create a login</h2>
+  <p class="muted">For a customer who has paid you. They log in with these details at the main site.</p>
+  <form method="post" action="/admin/users/create" autocomplete="off">
+    {{ m.csrf_field(csrf) }}
+    <div class="field"><label for="nu">Username</label><input id="nu" name="username" type="text" required></div>
+    <div class="field"><label for="ne">Email</label><input id="ne" name="email" type="email"><div class="hint">For payment reminders and support replies.</div></div>
+    <div class="field"><label for="np">Password</label><input id="np" name="password" type="text" placeholder="Leave blank to generate one"></div>
+    <div class="field"><label for="npl">Plan</label><select id="npl" name="plan_id">{% for p in plans %}<option value="{{ p.id }}" {{ 'selected' if p.key == 'pro' }}>{{ p.name }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="nb">Billing</label><select id="nb" name="billing"><option value="monthly">Monthly</option><option value="lifetime">Lifetime</option><option value="free">Free</option></select></div>
+    <div class="field" data-monthly><label for="npu">Paid until</label><input id="npu" name="paid_until" type="date"><div class="hint">Blank means one month from today.</div></div>
+    <div class="field"><label for="ntl">Time limit</label><select id="ntl" name="time_limit" data-limit>{% for v, l in time_limits %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select>
+      <div class="hint">When it runs out the account closes by itself (they get an email first).</div></div>
+    <div class="field" data-limit-date hidden><label for="nte">Access until</label><input id="nte" name="expires_on" type="date"></div>
+    <button class="btn primary" type="submit">Create login</button>
+  </form>
+</section>
+</div>
+{% endblock %}

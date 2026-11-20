@@ -1,0 +1,6 @@
+{
+  "server_url": "https://app.yourdomain.com",
+  "node_token": "paste the key from Admin > Servers > Add a VPS",
+  "mt5_template": "C:\\Program Files\\MetaTrader 5",
+  "accounts_dir": "C:\\PipsFarmer\\accounts"
+}

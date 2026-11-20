@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Channels | {{ site }}{% endblock %}
+{% block content %}
+<div class="pagehead"><div><h1>Channels</h1><p>Every account copies {{ main.title }}. Pro and Extreme can copy gold signals from other Telegram channels you're in.</p></div></div>
+
+{% if not max_channels %}
+<section class="panel">
+  <h2>Copy your own Telegram channels</h2>
+  <p>Link your Telegram and pick the signal channels you're already a member of. {{ site }} reads their gold signals and updates and trades them on your accounts, alongside the VIP group.</p>
+  <a class="btn primary" href="/plan">See Pro and Extreme</a>
+</section>
+{% else %}
+<div class="grid g2">
+  <section class="panel">
+    <div class="panel-head"><h2>Channels you copy</h2><small>{{ mine|length }} of {{ max_channels if max_channels < 999 else "unlimited" }}</small></div>
+    {% for c in mine %}
+      <div class="actions" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--furrow)">
+        <span>{{ c.title }}</span>
+        <form method="post" action="/channels/{{ c.id }}/remove">{{ m.csrf_field(csrf) }}<button class="btn small danger" type="submit">Stop copying</button></form>
+      </div>
+    {% else %}<p class="muted">None yet. {% if user.tg_session_enc %}Pick one from your Telegram chats.{% else %}Link your Telegram first.{% endif %}</p>{% endfor %}
+  </section>
+
+  <section class="panel">
+    {% if user.tg_session_enc %}
+      <div class="panel-head"><h2>Your Telegram chats</h2>
+        <form method="post" action="/channels/telegram/unlink">{{ m.csrf_field(csrf) }}<button class="btn small" type="submit" data-confirm="Unlink Telegram? Your extra channels stop copying.">Unlink {{ user.tg_name }}</button></form></div>
+      {% if dialog_error %}<div class="flash err">{{ dialog_error }}</div>{% endif %}
+      {% if mine|length >= max_channels %}<p class="muted">You're using every channel your plan allows.</p>{% endif %}
+      <div style="max-height:460px;overflow:auto">
+      {% for d in dialogs %}
+        <form method="post" action="/channels/add" class="actions" style="justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--furrow)">
+          {{ m.csrf_field(csrf) }}<input type="hidden" name="chat_id" value="{{ d.id }}"><input type="hidden" name="title" value="{{ d.title }}">
+          <span>{{ d.title }}</span>
+          <button class="btn small" type="submit" {{ 'disabled' if mine|length >= max_channels }}>Copy</button>
+        </form>
+      {% endfor %}
+      </div>
+    {% elif pending_phone %}
+      <h2>Enter the code</h2>
+      <p class="muted">Telegram sent a login code to the Telegram app on {{ pending_phone }}.</p>
+      <form method="post" action="/channels/telegram/code" autocomplete="off">
+        {{ m.csrf_field(csrf) }}
+        <div class="field"><label for="code">Code</label><input id="code" name="code" type="text" inputmode="numeric" required autofocus></div>
+        <div class="field"><label for="tgpw">2-step password (only if you set one)</label><input id="tgpw" name="password" type="password"></div>
+        <button class="btn primary" type="submit">Link Telegram</button>
+      </form>
+    {% else %}
+      <h2>Link your Telegram</h2>
+      <p class="muted">We use it only to read the signal channels you choose. You can unlink at any time, and you'll see "PipsFarmer" under Telegram's active sessions.</p>
+      <form method="post" action="/channels/telegram/start" autocomplete="off">
+        {{ m.csrf_field(csrf) }}
+        <div class="field"><label for="phone">Phone number</label><input id="phone" name="phone" type="tel" required placeholder="+447700900123"></div>
+        <button class="btn primary" type="submit">Send me a code</button>
+      </form>
+    {% endif %}
+  </section>
+</div>
+{% endif %}
+{% endblock %}

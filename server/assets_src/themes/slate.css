@@ -1,0 +1,23 @@
+/* Theme H: Chart Slate */
+:root {
+  --pine: #161d2f; --pine-2: #111727;
+  --field: #1c2439; --field-2: #222c45; --furrow: #2e3a58; --furrow-2: #46557a;
+  --straw: #eef2fb; --straw-dim: #98a3bd;
+  --gold: #4a74ff; --gold-deep: #335ff0; --accent-soft: #8ea8ff; --accent-pale: #d4defe;
+  --gilt: #7f95ff; --gilt-soft: #a9b8ff; --gilt-rgb: 127,149,255; --link: #8ea8ff;
+  --sprout: #3ecf8e; --rust: #ff5c6c; --amber: #f2b84b; --track: #2a3552;
+  --c1: #6b8cff; --c2: #3f68ff; --c3: #6a4dff;
+  --c1-rgb: 107,140,255; --c2-rgb: 63,104,255; --c3-rgb: 106,77,255;
+  --up-rgb: 62,207,142; --down-rgb: 255,92,108; --wait-rgb: 242,184,75;
+  --bg-rgb: 22,29,47; --deep-rgb: 17,23,39; --panel-rgb: 28,36,57; --raised-rgb: 34,44,69; --dim-rgb: 152,163,189;
+  --on-grad: #ffffff;
+  --display: "Inter", "Segoe UI", system-ui, sans-serif;
+}
+body { background: linear-gradient(180deg, #19223a 0%, var(--pine) 420px) !important; }
+h1, h2, h3, .hero h1 { font-weight: 700; letter-spacing: -.03em; }
+.hero h1 em { background: none; color: #6d7dff; -webkit-text-fill-color: #6d7dff; }
+.btn.primary { background: var(--gold); }
+.chip.on { background: var(--gold); }
+.wordmark svg stop:nth-of-type(1) { stop-color: #6b8cff; } .wordmark svg stop:nth-of-type(2) { stop-color: #3f68ff; } .wordmark svg stop:nth-of-type(3) { stop-color: #6a4dff; }
+.wordmark svg path[stroke="#d4af37"] { stroke: #eef2fb; }
+.catchup { border-top-color: var(--gold); }

@@ -1,0 +1,64 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ acc.login }}{% endblock %}
+{% block content %}
+{% set cur = acc.currency %}
+<div class="pagehead">
+  <div><h1>{{ acc.label or acc.login }}</h1>
+    <p><a href="/admin/users/{{ acc.user.id }}">{{ acc.user.username }}</a>, {{ acc.login }} on {{ acc.server }}{% if acc.broker %} ({{ acc.broker }}){% endif %} &nbsp;{{ m.status(acc) }}</p></div>
+  <form method="post" action="/admin/accounts/{{ acc.id }}/action" class="actions">
+    {{ m.csrf_field(csrf) }}
+    <button class="btn" name="action" value="toggle">{{ "Pause copying" if acc.copy_enabled else "Start copying" }}</button>
+    <button class="btn" name="action" value="restart">Restart MT5</button>
+    <button class="btn" name="action" value="requeue">Move to another VPS</button>
+    <button class="btn danger" name="action" value="close_all" data-confirm="Close all PipsFarmer trades on this account?">Close all trades</button>
+  </form>
+</div>
+{% if acc.conn_error %}<div class="flash err">{{ acc.conn_error }}</div>{% endif %}
+{% if live.blocked %}<div class="flash warn">Blocked: {{ live.blocked }}</div>{% endif %}
+
+<div class="panel"><div class="figures">
+  <div><span>Balance</span><b class="num">{{ acc.balance|money(cur) }}</b></div>
+  <div><span>Equity</span><b class="num">{{ acc.equity|money(cur) }}</b></div>
+  <div><span>Today</span><b>{{ m.pnl(stats.periods.today, cur) }}</b></div>
+  <div><span>Month</span><b>{{ m.pnl(stats.periods.month, cur) }}</b></div>
+  <div><span>Win rate</span><b class="num">{{ stats.win_rate }}%</b></div>
+  <div><span>VPS</span><b>{{ acc.node.name if acc.node else "none" }}</b></div>
+  <div><span>Last report</span><b>{{ acc.last_report|ago }}</b></div>
+</div></div>
+
+<div class="grid g2" style="margin-top:18px">
+  <section class="panel"><h2>Balance and equity</h2><svg class="line" data-line='{{ curve|tojson }}'></svg></section>
+  <section class="panel">
+    <h2>Settings in force</h2>
+    <p class="muted">After plan limits. Following: {{ sources|map(attribute="title")|join(", ") or "nothing" }}.</p>
+    <div class="table-wrap" style="max-height:260px;overflow:auto"><table>
+      {% for k, v in effective.items() %}<tr><td><small>{{ k.replace("_", " ") }}</small></td><td>{{ v }}</td></tr>{% endfor %}
+    </table></div>
+  </section>
+</div>
+
+<section class="panel" style="margin-top:18px">
+  <h2>Open now</h2>
+  {% set pos = live.positions or [] %}
+  {% if pos or live.pendings or live.waiting %}
+  <div class="table-wrap"><table>
+    <tr><th>Trade</th><th class="r">Lots</th><th class="r">Entry</th><th class="r">SL</th><th class="r">TP</th><th class="r">Profit</th></tr>
+    {% for p in pos %}<tr><td><span class="side {{ p.side }}">{{ p.side|capitalize }}</span> {{ p.symbol }} <small>#{{ p.signal_id }}</small></td><td class="r num">{{ p.volume }}</td><td class="r num">{{ p.price|price }}</td><td class="r num">{{ p.sl|price }}</td><td class="r num">{{ p.tp|price }}</td><td class="r">{{ m.pnl(p.profit, cur) }}</td></tr>{% endfor %}
+    {% for p in (live.pendings or []) + (live.waiting or []) %}<tr><td><span class="side {{ p.side }}">{{ p.side|capitalize }}</span> waiting <small>#{{ p.signal_id }}</small></td><td class="r num">{{ p.volume }}</td><td class="r num">{{ p.price|price }}</td><td class="r num">{{ p.sl|price }}</td><td class="r num">{{ p.tp|price }}</td><td></td></tr>{% endfor %}
+  </table></div>
+  {% else %}<p class="muted">Nothing open.</p>{% endif %}
+  {% if live.notes %}<h3 style="margin-top:16px">Recent worker notes</h3>{% for n in live.notes %}<p class="muted" style="font-size:13px;margin:0 0 4px">{{ n }}</p>{% endfor %}{% endif %}
+  {% if live.unknown_server %}<div class="flash warn" style="margin-top:16px">MT5 doesn't know the server <b>{{ acc.server }}</b> yet. If the name is right: on the VPS double-click <b>PipsFarmer - add a broker</b> on the desktop, then File → Open an Account, search the broker's name, click Cancel and close MT5. Every VPS learns it within a few minutes and this account connects by itself.</div>{% endif %}
+  {% if live.journal %}<h3 style="margin-top:16px">MT5 journal</h3><pre class="log">{% for j in live.journal %}{{ j }}
+{% endfor %}</pre>{% endif %}
+</section>
+
+<section class="panel" style="margin-top:18px">
+  <h2>Closed trades</h2>
+  <div class="table-wrap scroll"><table>
+    <tr><th>Closed</th><th>Trade</th><th class="r">Lots</th><th class="r">Price</th><th>Signal</th><th class="r">Result</th></tr>
+    {% for d in deals %}<tr><td>{{ d.time|date("%d %b %H:%M") }}</td><td><span class="side {{ d.side }}">{{ d.side|capitalize }}</span> {{ d.symbol }}{% if not d.ours %} <small>manual</small>{% endif %}</td><td class="r num">{{ d.volume }}</td><td class="r num">{{ d.price|price }}</td><td>{{ "#" ~ d.signal_id if d.signal_id else "" }}</td><td class="r">{{ m.pnl(d.profit, cur) }}</td></tr>
+    {% else %}<tr><td class="muted">Nothing closed yet.</td></tr>{% endfor %}
+  </table></div>
+</section>
+{% endblock %}

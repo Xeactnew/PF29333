@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Overview | {{ site }}{% endblock %}
+{% block content %}
+{% set cur = currency %}
+{% macro m_name(r) %}{{ r.group if r.group != 'Your trade' else 'your own trade' }}{% endmacro %}
+{% if not accounts %}
+  <div class="pagehead"><div><h1>Welcome, {{ user.username }}</h1><p>Connect an MT5 account and {{ site }} starts copying the VIP group's gold signals onto it.</p></div></div>
+  <div class="panel"><h2>Add your first MT5 account</h2><p>You'll need your MT5 login number, password and broker server name. Use the main (trading) password, not the investor one.</p><a class="btn primary" href="/accounts">Add MT5 account</a></div>
+{% else %}
+<div class="hello"><h1>{{ hello }}, <span>{{ user.username }}</span></h1></div>
+{% if setup %}
+<section class="panel setup" aria-label="Getting started">
+  <div class="panel-head"><h2>Finish setting up</h2><small>{{ setup|selectattr(1)|list|length }} of {{ setup|length }} done</small></div>
+  <ol class="steps">{% for what, done, link in setup %}<li class="{{ 'done' if done }}"><a href="{{ link }}">{{ what }}</a></li>{% endfor %}</ol>
+</section>
+{% endif %}
+
+<section class="panel catchup" aria-label="Catch-up">
+  <div class="catch-head">
+    <span class="eyebrow">// {% if away %}away {{ away|duration }} · since {{ away_from|date("%H:%M") }}{% else %}last 24 hours{% endif %}</span>
+    <h2>{{ "Your catch-up" if away else "Your day so far" }}</h2>
+  </div>
+  {% set su = summary %}
+  <div class="catch-grid">
+    <div class="catch-net"><span>Net closed</span><b class="{{ 'up' if su.net > 0 else 'down' if su.net < 0 }}">{{ su.net|signed(currency) }}</b>
+      <small>{{ su.closed }} closed · {{ su.won }} won</small></div>
+    <div class="catch-facts">
+      <div><span>Open</span><b class="num">{{ open_positions }}</b>{% if open_positions %}<small class="{{ 'up' if floating > 0 else 'down' if floating < 0 }}">{{ floating|signed(currency) }}</small>{% endif %}</div>
+      <div><span>Queued entries</span><b class="num">{{ waiting_entries }}</b></div>
+      <div><span>New calls</span><b class="num">{{ su.posts }}</b></div>
+    </div>
+  </div>
+  {% if su.best or su.worst %}
+  <ul class="catch-notes">
+    {% if su.best %}<li><i class="up">▲</i> Best: {{ m_name(su.best) }}, {{ su.best.side }} closed {{ su.best.time|date("%H:%M") }} <b class="up">{{ su.best.pnl|signed(currency) }}</b></li>{% endif %}
+    {% if su.worst %}<li><i class="down">▼</i> Worst: {{ m_name(su.worst) }}, {{ su.worst.side }} closed {{ su.worst.time|date("%H:%M") }} <b class="down">{{ su.worst.pnl|signed(currency) }}</b></li>{% endif %}
+  </ul>
+  {% endif %}
+  {% if su.rows %}
+  <details class="since-more"><summary>Every closed trade</summary>
+    {% for r in su.rows %}
+    <div class="mini-trade"><span class="side {{ r.side }}">{{ r.side|capitalize }}</span>
+      <span>{{ r.group }}<small>Closed {{ r.time|date("%H:%M") }}</small></span>
+      <b class="{{ 'up' if r.pnl > 0 else 'down' if r.pnl < 0 }}">{{ r.pnl|signed(currency) }}</b></div>
+    {% endfor %}
+  </details>
+  {% endif %}
+</section>
+
+{% if trades_live %}
+<section class="panel" style="margin-top:18px" aria-label="Live trades">
+  <div class="panel-head"><h2>Live trades</h2><small>{{ trades_live|length }} signal{{ 's' if trades_live|length != 1 }}</small></div>
+  {% for t in trades_live %}
+  <article class="ltrade {{ t.side }}">
+    <header>
+      <div><span class="side {{ t.side }}">{{ t.side|capitalize }}</span> <b>{{ t.channel }}</b>
+        <small>{{ t.filled }} of {{ t.total }} filled{% if t.total > t.filled %} · {{ t.total - t.filled }} waiting{% endif %}{% if accounts|length > 1 %} · {{ t.account.label or t.account.login }}{% endif %}</small></div>
+      <b class="{{ 'up' if t.profit > 0 else 'down' if t.profit < 0 }}">{{ t.profit|signed(currency) if t.filled else "Pending" }}</b>
+    </header>
+    <div class="zbar" role="img" aria-label="Risk, entry and target zones with the current price">
+      {% if t.z_risk %}<i class="zone risk" style="left:{{ t.z_risk[0] }}%;width:{{ t.z_risk[1] }}%"></i>{% endif %}
+      {% if t.z_entry %}<i class="zone entry" style="left:{{ t.z_entry[0] }}%;width:{{ t.z_entry[1] }}%"></i>{% endif %}
+      {% if t.z_reward %}<i class="zone reward" style="left:{{ t.z_reward[0] }}%;width:{{ t.z_reward[1] }}%"></i>{% endif %}
+      {% for x in t.m_tps %}<em class="tpn" style="left:{{ x }}%">{{ loop.index }}</em>{% endfor %}
+      {% if t.m_price is not none %}<b class="ptr" style="left:{{ t.m_price }}%"></b>{% endif %}
+    </div>
+    <div class="llabels">
+      <span class="down">SL {{ t.sl|price if t.sl else "—" }}</span>
+      <span>Entry {{ (t.entries[0]|price) if t.entries else "—" }}{% if t.entries|length > 1 %}–{{ t.entries[-1]|price }}{% endif %}</span>
+      <span class="up">{% for x in t.tps %}TP{{ loop.index }} {{ x|price }}{{ " · " if not loop.last }}{% else %}No targets yet{% endfor %}</span>
+    </div>
+  </article>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% set cur = currency %}{% set period = "today" %}{% set deck_title = "Your signal groups" %}
+{% include "_group_deck.html" %}
+
+
+
+<section class="panel harvest" style="margin-top:18px" aria-label="Profit and loss">
+  <div>
+    <div class="caption">Closed profit today, all accounts</div>
+    <div class="today {{ 'up' if stats.periods.today > 0 else 'down' if stats.periods.today < 0 }}">{{ stats.periods.today|signed(cur) }}</div>
+    <div class="periods">
+      <div>This week<b>{{ m.pnl(stats.periods.week, cur) }}</b></div>
+      <div>This month<b>{{ m.pnl(stats.periods.month, cur) }}</b></div>
+      <div>All time<b>{{ m.pnl(stats.periods.all, cur) }}</b></div>
+    </div>
+  </div>
+  <div>
+    <div class="caption">Last 30 days, day by day</div>
+    <svg class="bars" data-bars='{{ daily|tojson }}' role="img" aria-label="Daily profit and loss for the last 30 days"></svg>
+  </div>
+</section>
+
+<section class="panel" style="margin-top:18px" aria-label="Totals">
+  <div class="totals">
+    <div><span>Balance</span><b class="num">{{ balance|money(cur) }}</b></div>
+    <div><span>Equity</span><b class="num">{{ equity|money(cur) }}</b></div>
+    <div><span>Open trades</span><b class="num">{{ open_positions }}</b></div>
+    <div><span>Floating</span><b>{{ m.pnl(floating, cur) }}</b></div>
+    <div><span>Win rate</span><b class="num">{{ stats.win_rate }}%</b></div>
+    <div><span>Trades closed</span><b class="num">{{ stats.trades }}</b></div>
+  </div>
+</section>
+
+<div class="grid g2" style="margin-top:18px">
+  <section class="panel">
+    <div class="panel-head"><h2>Accounts</h2><a href="/accounts">Manage</a></div>
+    {% for a in accounts %}
+    <a class="arow" href="/accounts/{{ a.id }}">
+      <i class="dot {{ 'on' if a.conn_status == 'online' and a.copy_enabled else 'off' }}"></i>
+      <span><b>{{ a.label or a.broker or a.login }}</b><small>{{ a.login }} · {{ "Copying" if a.copy_enabled else "Paused" }}{% if a.conn_status != "online" %} · {{ a.conn_status|capitalize }}{% endif %}</small></span>
+      <span class="r"><b class="num">{{ a.balance|money(a.currency) }}</b><small>{{ m.pnl((a.live_state or {}).get("day_pnl") or 0, a.currency) }} today</small></span>
+    </a>
+    {% endfor %}
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>Recent closed trades</h2><a href="/signals">All calls</a></div>
+    {% for d in recent %}
+    <div class="mini-trade"><span class="side {{ d.side }}">{{ d.side|capitalize }}</span>
+      <span>{{ acc_names.get(d.account_id) }}<small>{{ d.time|date("%d %b %H:%M") }} · {{ d.volume }} lots</small></span>
+      <b class="{{ 'up' if d.profit > 0 else 'down' if d.profit < 0 }}">{{ d.profit|signed(currency) }}</b></div>
+    {% else %}<p class="muted">Closed trades show here once your first signal has played out.</p>{% endfor %}
+  </section>
+</div>
+
+<section class="panel sessions" style="margin-top:18px" aria-label="Market sessions">
+  <div class="panel-head"><h2>Market hours</h2><small>UTC · busiest when London and New York overlap</small></div>
+  {% for r in sessions.rows %}
+  <div class="srow"><span class="{{ 'open' if r.open }}">{{ r.name }}</span>
+    <div class="strack">{% for x, w in r.segs %}<i style="left:{{ x }}%;width:{{ w }}%" class="{{ 'open' if r.open }}"></i>{% endfor %}<em style="left:{{ sessions.now }}%"></em></div></div>
+  {% endfor %}
+</section>
+{% endif %}
+{% endblock %}

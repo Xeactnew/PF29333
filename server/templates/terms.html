@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Terms of use | {{ site }}{% endblock %}
+{% block body %}
+<div class="public">
+  <header class="public-top">
+    <a class="wordmark" href="/">{{ m.logo(30) }}{{ site }}</a>
+    <div class="actions"><a class="btn" href="/login">Log in</a></div>
+  </header>
+  <section class="panel terms" style="max-width:820px;margin:24px auto">
+    <h1>Terms of use</h1>
+    <p class="muted">Last updated {{ updated }}. Draft wording: have it checked by a solicitor before launch.</p>
+
+    <h2>1. The service</h2>
+    <p>{{ site }} copies trade ideas posted by signal groups onto MetaTrader 5 accounts that you connect. Trade ideas are not financial advice. Trading gold and other leveraged products carries a high risk of losing money, and past results don't guarantee future ones. You choose the settings, the lot sizes and the account, and you are responsible for the trades placed on it.</p>
+
+    <h2>2. Your account</h2>
+    <p>Keep your login private and use only MT5 accounts you own or are allowed to trade. You can pause copying, close trades or remove an account at any time from the website.</p>
+
+    <h2>3. Our technology is ours</h2>
+    <p>The website, the trading engine and everything behind them (software, code, signal reading and trade-management methods, settings, designs, text and logos) belong to {{ site }}. Your plan gives you a personal, non-transferable right to use the service. It doesn't give you any right to the technology itself.</p>
+    <p>You must not, and must not help anyone else to:</p>
+    <ul>
+      <li>copy, reverse engineer, decompile, disassemble, scrape or try to extract the source code, logic, methods or data of the service;</li>
+      <li>build, or help build, a product or service that copies or competes with {{ site }} using anything learned from it;</li>
+      <li>resell, share, frame or re-publish the service, its signals or its results;</li>
+      <li>probe, scan or test the security of the service, use automated tools or bots on it, or get round any limit or access control.</li>
+    </ul>
+    <p>If we reasonably believe you have broken this section we may suspend or close your account straight away, without a refund, and take further action.</p>
+
+    <h2>4. Payments</h2>
+    <p>Plans are paid monthly or once for lifetime access, as shown on the plans page. A lifetime plan lasts for as long as we run the service.</p>
+
+    <h2>5. Availability and liability</h2>
+    <p>We work to keep the service running all day, every day, but brokers, Telegram, internet links and MetaTrader can fail or delay trades. To the extent the law allows, we aren't liable for trading losses, missed trades or indirect losses.</p>
+
+    <h2>6. Changes</h2>
+    <p>We may update these terms. If a change matters, we'll tell you on the website or by email before it takes effect.</p>
+  </section>
+</div>
+{% endblock %}

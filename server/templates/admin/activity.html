@@ -1,0 +1,13 @@
+{% extends "admin/base.html" %}
+{% block title %}Activity{% endblock %}
+{% block content %}
+<div class="pagehead"><div><h1>Activity</h1><p>The last 300 things customers and admins did.</p></div></div>
+<section class="panel"><div class="table-wrap"><table>
+  <tr><th>When</th><th>Customer</th><th>What</th><th>Detail</th><th>By</th><th>IP</th></tr>
+  {% for a in rows %}
+  <tr><td><small>{{ a.time|date("%d %b %H:%M") }}</small></td>
+      <td>{% if a.user_id %}<a href="/admin/users/{{ a.user_id }}">{{ names.get(a.user_id, a.user_id) }}</a>{% endif %}</td>
+      <td>{{ a.action.replace("_", " ") }}</td><td><small>{{ a.detail[:100] }}</small></td><td><small>{{ a.actor }}</small></td><td><small>{{ a.ip }}</small></td></tr>
+  {% endfor %}
+</table></div></section>
+{% endblock %}

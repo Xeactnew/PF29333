@@ -1,0 +1,54 @@
+{% extends "admin/base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="pagehead"><div><span class="eyebrow">// settings</span><h1>Settings</h1></div></div>
+<form method="post" action="/admin/settings" class="grid g2">
+  {{ m.csrf_field(csrf) }}
+  <section class="panel">
+    <h2>Website</h2>
+    <label class="check"><input type="checkbox" name="allow_signup" {{ 'checked' if values.allow_signup }}> <span>Anyone can sign up for the free Standard plan</span></label>
+    <div class="field"><label for="ct">How to pay (shown on the Plan page, sign-up and reminder emails)</label><textarea id="ct" name="contact_text">{{ values.contact_text }}</textarea></div>
+    <div class="field"><label for="cl">Contact link</label><input id="cl" name="contact_link" type="text" value="{{ values.contact_link }}" placeholder="https://t.me/xaupipsfarmer"></div>
+    <div class="field"><label for="cap">Warn us when free VPS slots drop to</label><input id="cap" name="capacity_alert_free_slots" type="number" min="0" value="{{ values.capacity_alert_free_slots }}"></div>
+    <button class="btn primary" type="submit">Save settings</button>
+  </section>
+  <section class="panel">
+    <h2>Your admin password</h2>
+    <div class="field"><label for="pc">Current password</label><input id="pc" name="password_current" type="password" autocomplete="current-password"></div>
+    <div class="field"><label for="pn">New password</label><input id="pn" name="password_new" type="password" autocomplete="new-password" minlength="8"></div>
+    <button class="btn" type="submit">Save</button>
+    <h3 style="margin-top:22px">Admins</h3>
+    {% for a in admins %}<p style="margin:0 0 4px">{{ a.username }} <small>{{ "Telegram alerts on" if a.telegram_chat_id else "no Telegram chat set" }}, last login {{ a.last_login|ago }}</small></p>{% endfor %}
+    <p class="muted" style="font-size:13px">Add admins in <a href="/admin/system">System</a>, and link Telegram alerts in <a href="/admin/telegram">Telegram</a>.</p>
+  </section>
+</form>
+
+<section class="panel" id="email" style="margin-top:18px">
+  <div class="panel-head"><h2>Email</h2><span class="pill {{ 'online' if mail_ok else 'waiting' }}">{{ "Sending" if mail_ok else "Not set up" }}</span></div>
+  <p class="muted">Payment reminders, plan confirmations and support emails go out from your own email account. With Gmail: turn on 2-Step Verification, then make an <b>app password</b> at <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a> and paste it below (not your normal password).</p>
+  <form method="post" action="/admin/settings/email">
+    {{ m.csrf_field(csrf) }}
+    <div class="grid g2">
+      <div>
+        <div class="fields">
+          <div class="field"><label for="sh">SMTP server</label><input id="sh" name="smtp_host" type="text" value="{{ values.smtp_host or 'smtp.gmail.com' }}"></div>
+          <div class="field"><label for="sp">Port</label><input id="sp" name="smtp_port" type="number" value="{{ values.smtp_port or 587 }}"></div>
+        </div>
+        <div class="field"><label for="su">Email account (sends the emails)</label><input id="su" name="smtp_user" type="email" value="{{ values.smtp_user or '' }}" placeholder="you@gmail.com"></div>
+        <div class="field"><label for="spw">App password</label><input id="spw" name="smtp_password" type="password" autocomplete="off" placeholder="{{ 'saved, paste a new one to change it' if has_smtp_pw else '16 letters from Google' }}"></div>
+        <div class="field"><label for="sf">Sender name</label><input id="sf" name="smtp_from_name" type="text" value="{{ values.smtp_from_name or site }}"></div>
+      </div>
+      <div>
+        <div class="field"><label for="se">Support questions go to</label><input id="se" name="support_email" type="email" value="{{ values.support_email or '' }}"></div>
+        <label class="check"><input type="checkbox" name="reminder_emails" {{ 'checked' if values.reminder_emails is not false }}> <span>Email customers before their month or time limit runs out</span></label>
+        <div class="field"><label for="rd">Days before (comma separated)</label><input id="rd" name="reminder_days" type="text" value="{{ values.reminder_days or '3,1' }}"><div class="hint">Plus an email the day access ends.</div></div>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn primary" type="submit">Save email settings</button>
+      <input name="test_to" type="email" placeholder="test to (blank = support email)" style="max-width:260px">
+      <button class="btn" name="action" value="test">Send test email</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

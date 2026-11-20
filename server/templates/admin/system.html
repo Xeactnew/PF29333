@@ -1,0 +1,98 @@
+{% extends "admin/base.html" %}
+{% block title %}System{% endblock %}
+{% block content %}
+<div class="pagehead"><div><span class="eyebrow">// system</span><h1>System</h1>
+  <p>Updates, your domain, backups and automatic jobs. Everything here works from your phone.</p></div>
+  <span class="pill plain mono">v{{ version }}</span></div>
+
+<div class="grid g2">
+<section class="panel">
+  <h2>Update PipsFarmer</h2>
+  <p class="muted">Upload a new <code>pipsfarmer.zip</code>. The database is backed up first, the site restarts in about a minute, and every other VPS updates itself straight after. Open trades stay open with their SL and TP.</p>
+  <form method="post" action="/admin/system/update" enctype="multipart/form-data">
+    {{ m.csrf_field(csrf) }}
+    <div class="field"><input type="file" name="zip" accept=".zip" required></div>
+    <button class="btn primary" type="submit" data-confirm="Update PipsFarmer now?" {{ 'disabled' if not is_windows }}>Upload and update</button>
+  </form>
+  {% if update_log %}<h3 style="margin-top:18px">Last update</h3><pre class="log">{{ update_log }}</pre>{% endif %}
+</section>
+
+<section class="panel">
+  <h2>Restart protection</h2>
+  <p class="muted">What brings this VPS back by itself after a restart, a crash or a power cut. After a restart the bot tells you when everything is back.</p>
+  <ul class="todo">
+  {% for label, ok, hint in protection %}
+    <li class="{{ 'done' if ok }}"><span>{{ label }}</span> <small class="muted">· {{ "on" if ok else ("can't check here" if ok is none else "off") }} · {{ hint }}</small></li>
+  {% endfor %}
+  </ul>
+</section>
+
+<section class="panel">
+  <h2>Site icon</h2>
+  <p class="muted">The little picture in the browser tab, bookmarks and on phone home screens. Upload your logo as a square PNG or JPG (512×512 is ideal). It's used on the customer site and admin.</p>
+  <div class="actions" style="align-items:center;margin-bottom:12px">
+    <img src="/favicon.ico?v={{ icon_v }}" alt="Current icon" width="48" height="48" style="border-radius:10px;background:#0b0a0b">
+    <small class="muted">{{ "Your uploaded icon" if icon_custom else "The PipsFarmer icon (default)" }}</small>
+  </div>
+  <form method="post" action="/admin/system/icon" enctype="multipart/form-data">
+    {{ m.csrf_field(csrf) }}
+    <div class="field"><input type="file" name="icon" accept="image/png,image/jpeg,image/webp,image/x-icon,.ico"></div>
+    <div class="actions"><button class="btn primary" type="submit">Upload icon</button>
+      {% if icon_custom %}<button class="btn" type="submit" name="action" value="default" formnovalidate>Use the PipsFarmer icon</button>{% endif %}</div>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Your domain</h2>
+  <p class="muted">Customers reach the site through a Cloudflare Tunnel, so the VPS needs no open ports. In Cloudflare: <b>Zero Trust → Networks → Tunnels → Create a tunnel</b> (Cloudflared), name it, then copy the install command and paste it here. Add a public hostname <code>pipsfarmer.com</code> → <code>http://localhost:8000</code>.</p>
+  <p>Tunnel: <span class="pill {{ 'online' if tunnel == 'running' else 'waiting' }}">{{ tunnel or "not installed" }}</span></p>
+  <form method="post" action="/admin/system/tunnel">
+    {{ m.csrf_field(csrf) }}
+    <div class="field"><label for="tt">Tunnel token or install command</label><input id="tt" name="token" type="password" autocomplete="off" placeholder="cloudflared.exe service install eyJh..."></div>
+    <button class="btn" type="submit" {{ 'disabled' if not is_windows }}>Install tunnel</button>
+  </form>
+  <p class="muted" style="font-size:13px;margin-top:10px">Protect <code>/admin</code> with Cloudflare Access (Zero Trust → Access → Applications) using you and your partner's emails.</p>
+</section>
+
+<section class="panel">
+  <h2>Automatic jobs</h2>
+  <form method="post" action="/admin/system/settings">
+    {{ m.csrf_field(csrf) }}
+    <div class="field"><label for="pu">Website address</label><input id="pu" name="public_url" type="text" value="{{ public_url }}" placeholder="https://pipsfarmer.com">
+      <div class="hint">Used in the install command for new VPS.</div></div>
+    <label class="check"><input type="checkbox" name="daily_summary" {{ 'checked' if values.daily_summary is not false }}> <span>Daily summary on Telegram</span></label>
+    <div class="field" style="max-width:220px"><label for="sh">Summary time (UTC hour)</label><input id="sh" name="summary_hour_utc" type="number" min="0" max="23" value="{{ values.summary_hour_utc if values.summary_hour_utc is not none else 7 }}"></div>
+    <label class="check"><input type="checkbox" name="backup_to_telegram" {{ 'checked' if values.backup_to_telegram is not false }}> <span>Send the nightly database backup to our Telegram</span></label>
+    <label class="check"><input type="checkbox" name="weekend_restarts" {{ 'checked' if values.weekend_restarts is not false }}> <span>Restart VPS on Saturday when Windows updates need it (gold is closed)</span></label>
+    <button class="btn primary" type="submit">Save</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Backups</h2>
+  <p class="muted">A backup is made every night at 02:00 UTC and before every update. The last 14 are kept on the VPS.</p>
+  <div class="actions">
+    <form method="post" action="/admin/system/backup">{{ m.csrf_field(csrf) }}<input type="hidden" name="what" value="db"><button class="btn" type="submit">Back up now</button></form>
+    <form method="post" action="/admin/system/backup">{{ m.csrf_field(csrf) }}<input type="hidden" name="what" value="keys"><button class="btn" type="submit" data-confirm="Send the two secret keys to your Telegram? Anyone with them and a backup can read saved MT5 passwords.">Send key backup to my Telegram</button></form>
+  </div>
+  <p class="muted" style="font-size:13px;margin-top:10px">Keep the key backup somewhere safe, off the VPS. With it and a database backup you can rebuild on a new VPS.</p>
+  {% if backups %}<table style="margin-top:10px">{% for b in backups %}<tr><td class="mono">{{ b.name }}</td><td class="r"><small>{{ (b.stat().st_size / 1e6)|round(1) }} MB</small></td></tr>{% endfor %}</table>{% endif %}
+</section>
+
+<section class="panel">
+  <h2>Admins</h2>
+  <table>{% for a in admins %}<tr><td>{{ a.username }}</td><td><small>{{ "Telegram linked" if a.telegram_chat_id else "Telegram not linked" }}, last login {{ a.last_login|ago }}</small></td></tr>{% endfor %}</table>
+  <form method="post" action="/admin/system/admins" class="fields" style="margin-top:14px">
+    {{ m.csrf_field(csrf) }}
+    <div class="field"><label for="au">New admin username</label><input id="au" name="username" type="text"></div>
+    <div class="field"><label for="ap">Password (10+ characters)</label><input id="ap" name="password" type="password" autocomplete="new-password"></div>
+    <div class="field"><button class="btn" type="submit">Add admin</button></div>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Website log</h2>
+  <pre class="log">{{ server_log or "No log yet." }}</pre>
+</section>
+</div>
+{% endblock %}

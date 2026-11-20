@@ -1,0 +1,29 @@
+/* Theme B: Emerald and Champagne */
+@font-face { font-family: "Newsreader"; font-weight: 400 600; font-style: normal; src: url("file:///tmp/minify/node_modules/@fontsource/newsreader/files/newsreader-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Newsreader"; font-weight: 400 600; font-style: italic; src: url("file:///tmp/minify/node_modules/@fontsource/newsreader/files/newsreader-latin-500-italic.woff2") format("woff2"); }
+:root {
+  --pine: #0c1a14; --pine-2: #08130e;
+  --field: #11231b; --field-2: #172d23; --furrow: #23423a; --furrow-2: #3a5e52;
+  --straw: #efe9dc; --straw-dim: #9fb3a8;
+  --gold: #d9bf86; --gold-deep: #b99a5c; --accent-soft: #e6d3a6; --accent-pale: #f3e8cd;
+  --gilt: #d9bf86; --gilt-soft: #e6d3a6; --gilt-rgb: 217,191,134; --link: #e6d3a6;
+  --sprout: #57d394; --rust: #f07167; --amber: #c9b27a; --track: #1f3a30;
+  --c1: #f0deb0; --c2: #d9bf86; --c3: #b5935a;
+  --c1-rgb: 240,222,176; --c2-rgb: 217,191,134; --c3-rgb: 181,147,90;
+  --up-rgb: 87,211,148; --down-rgb: 240,113,103; --wait-rgb: 201,178,122;
+  --bg-rgb: 12,26,20; --deep-rgb: 8,19,14; --panel-rgb: 17,35,27; --raised-rgb: 23,45,35; --dim-rgb: 159,179,168;
+  --on-grad: #10201a;
+  --display: "Newsreader", Georgia, serif;
+}
+body { background: radial-gradient(900px 420px at 50% -14%, rgba(217,191,134,.07), transparent 66%), var(--pine) !important; }
+h1, h2, h3, .hero h1 { font-weight: 500; letter-spacing: -.01em; }
+.hero h1 { font-weight: 400; letter-spacing: -.015em; line-height: 1.04; }
+.hero h1 em { font-style: italic; background: none; color: var(--gold); -webkit-text-fill-color: var(--gold); }
+.hello h1 span { font-style: italic; }
+.btn, .chip { border-radius: 999px; }
+.btn.primary { background: var(--gold); }
+.wordmark { font-weight: 500; }
+.wordmark svg stop:nth-of-type(1) { stop-color: #f0deb0; } .wordmark svg stop:nth-of-type(2) { stop-color: #d9bf86; } .wordmark svg stop:nth-of-type(3) { stop-color: #b5935a; }
+.wordmark svg path[stroke="#d4af37"] { stroke: #efe9dc; }
+.panel, .gcard { border-color: var(--furrow); }
+.catchup { border-top-color: var(--gold); }
