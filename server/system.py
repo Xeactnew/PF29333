@@ -20,7 +20,7 @@ from pathlib import Path
 
 from . import config
 
-VERSION = "1.3.22"
+VERSION = "1.3.23"
 ROOT = config.ROOT
 IS_WINDOWS = os.name == "nt"
 BACKUP_DIR = ROOT / "backups"

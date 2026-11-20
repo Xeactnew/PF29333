@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import trade_logic as tl  # noqa: E402
 
 MAGIC = 770077
-VERSION = "1.3.22"
+VERSION = "1.3.23"
 RECONNECT_AFTER = 120           # seconds MT5 may be off the broker before we log in again ourselves
 SL_WAIT_MIN = 30                # how long a signal without a stop loss waits for the group to post one
 FIRST_START_TIMEOUT = 300_000   # a brand-new MT5 copy compiles its examples and updates itself first
