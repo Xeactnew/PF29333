@@ -211,3 +211,10 @@ def test_ignored_update_leaves_a_note(rig):
     api.push("update", update={"signal_id": 95, "kind": "breakeven", "value": None})
     w.step()
     assert any("not applied because" in n and "Follow the group's updates" in n for n in w.notes)
+
+
+def test_every_logo_has_its_own_gradient(browser):
+    import re as _re
+    page = browser.get("/dashboard").text
+    ids = _re.findall(r'linearGradient id="([^"]+)"', page)
+    assert len(ids) >= 1 and len(ids) == len(set(ids))

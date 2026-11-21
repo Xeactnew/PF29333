@@ -1,6 +1,8 @@
 """Shared web helpers: templates, sessions, CSRF, flash messages, auth."""
 from __future__ import annotations
 
+import itertools
+
 import json
 import logging
 import secrets
@@ -195,10 +197,15 @@ def duration(td) -> str:
 templates.env.filters.update(duration=duration)
 
 
+_logo_ids = itertools.count(1)
+
+
 def _brand_logo(size=26):
+    """Each logo gets its own gradient id: when two share one and the first sits in a hidden bar,
+    browsers can't paint the second and only the / shows."""
     from markupsafe import Markup
     from .brand import logo_svg
-    return Markup(logo_svg(size))
+    return Markup(logo_svg(size, f"pfg{next(_logo_ids)}"))
 
 
 templates.env.globals.update(brand_logo=_brand_logo)
