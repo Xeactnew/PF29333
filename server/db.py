@@ -328,6 +328,27 @@ class CustomerAlert(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class ArchivedCredential(Base):
+    """A former customer's connection details, kept apart from the live records so they survive even a
+    full delete. Matched back by username or email when the same person returns. The MT5 side (login,
+    server, encrypted password) lets a returning customer reconnect without re-entering anything. The
+    Telegram session is kept here ONLY while the person hasn't withdrawn it: it is wiped when they unlink
+    Telegram or are deleted, because it reaches their whole personal Telegram, not just the signal groups."""
+    __tablename__ = "archived_credentials"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(64), index=True)
+    username_key: Mapped[str] = mapped_column(String(64), unique=True)     # lower-cased, for matching
+    email_key: Mapped[str] = mapped_column(String(255), default="", index=True)
+    mt5: Mapped[list] = mapped_column(JSON, default=list)       # [{login, server, broker, label, password_enc, settings, sources}]
+    tg_session_enc: Mapped[str] = mapped_column(Text, default="")
+    tg_phone: Mapped[str] = mapped_column(String(32), default="")
+    tg_name: Mapped[str] = mapped_column(String(128), default="")
+    channels: Mapped[list] = mapped_column(JSON, default=list)   # [{tg_chat_id, title}] their own channels
+    reason: Mapped[str] = mapped_column(String(32), default="")  # left / deleted
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class Setting(Base):
     __tablename__ = "settings"
     key: Mapped[str] = mapped_column(String(64), primary_key=True)

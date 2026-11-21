@@ -87,6 +87,10 @@ async def signup(request: Request, s=Depends(db_session)):
     s.add(user)
     s.flush()
     services.log(s, "signup", user.id, "", username, ip)
+    from . import vault
+    back = vault.restore(s, user)         # a returning customer: bring their MT5 (and Telegram, if still kept) back
+    if back["restored"]:
+        services.assign_accounts(s)
     paid = want and (want.monthly_price or want.lifetime_price) and want.key != "standard"
     if not paid:
         notify.send_admins(f"🆕 New sign-up: {username} (Standard, free)")
@@ -98,6 +102,10 @@ async def signup(request: Request, s=Depends(db_session)):
         flash(request, f"Account created. To start {want.name}, pay us using the details below; we switch it on "
                        f"as soon as the payment lands. You're on the free plan until then.")
         return redirect("/plan")
+    if back["restored"]:
+        flash(request, "Welcome back! We've reconnected the MT5 account{} you had before — check they're still "
+                       "right.".format("s" if back["mt5"] != 1 else ""))
+        return redirect("/accounts")
     flash(request, "Welcome to PipsFarmer. Add your MT5 account to start copying.")
     return redirect("/accounts")
 
@@ -938,6 +946,8 @@ async def tg_unlink(request: Request, s=Depends(db_session)):
     user.tg_name = user.tg_phone = ""
     for src in s.scalars(select(Source).where(Source.kind == "channel", Source.owner_user_id == user.id)):
         src.active = False
+    from . import vault
+    vault.forget_telegram(s, user.username, user.email)   # they withdrew our Telegram access: drop the archived session too
     services.log(s, "telegram_unlinked", user.id, "", user.username)
     s.commit()
     tg.reload_soon()

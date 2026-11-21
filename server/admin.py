@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, or_, select
 
 from . import billing as billing_mod
-from . import config, mailer, notify, reports, runtime, security, services, support, system
+from . import config, mailer, notify, reports, runtime, security, services, support, system, vault
 from .customer import USERNAME_RE, _parse_manual
 from .db import (Account, Activity, Admin, Deal, Node, Plan, Renewal, Signal, SignalUpdate, Source, Ticket,
                  UpgradeRequest, User, get_setting, main_source, set_setting, utcnow)
@@ -191,7 +191,8 @@ def user_page(user_id: int, request: Request, s=Depends(db_session)):
     return render(request, "admin/user.html", _ctx(admin, user=user, accounts=accounts,
                   stats=services.stats(s, ids), summary=services.activity_summary(s, user), acts=acts,
                   renewals=renewals, channels=channels, new_login=new_login, requests=reqs,
-                  time_limits=billing_mod.TIME_LIMITS, plans=list(s.scalars(select(Plan).order_by(Plan.sort)))))
+                  time_limits=billing_mod.TIME_LIMITS, plans=list(s.scalars(select(Plan).order_by(Plan.sort))),
+                  archived=vault.has_archive(s, user.username, user.email)))
 
 
 @router.post("/users/{user_id}/plan")
@@ -336,9 +337,15 @@ async def user_delete(user_id: int, request: Request, s=Depends(db_session)):
     if str(form.get("confirm", "")).strip() != user.username:
         flash(request, f"Not deleted: type {user.username} exactly to confirm.", "err")
         return redirect(f"/admin/users/{user.id}#delete")
+    uname, uemail = user.username, user.email
     name = services.delete_user(s, user, admin.username)
+    if form.get("purge") == "on":
+        vault.purge(s, uname, uemail)
+        note = " Their archived logins were erased too."
+    else:
+        note = " Their MT5 logins are archived so they can rejoin; their Telegram link was not kept."
     s.commit()
-    flash(request, f"{name} deleted, with their MT5 accounts and history.")
+    flash(request, f"{name} deleted, with their MT5 accounts and history." + note)
     return redirect("/admin/accounts?show=all")
 
 

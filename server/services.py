@@ -258,6 +258,10 @@ def set_plan(s, user: User, plan: Plan, billing: str, paid_until: datetime | Non
             r.status = "paid"
             r.answered_by = actor
             r.answered_at = utcnow()
+    from . import vault
+    if vault.restore(s, user, actor)["restored"]:    # a bigger plan can reconnect accounts kept in the archive
+        s.flush()
+        assign_accounts(s)
     trim_to_plan(s, user)
     log(s, "plan_changed", user.id, f"{old} -> {plan.name}/{billing}", actor)
 
@@ -276,6 +280,8 @@ def trim_to_plan(s, user: User) -> None:
 
 
 def close_user(s, user: User, actor: str, reason: str = "") -> None:
+    from . import vault
+    vault.archive(s, user, "left")        # keep their logins apart so a return needs no re-entering
     user.status = "closed"
     user.closed_at = utcnow()
     user.session_version += 1
@@ -307,6 +313,8 @@ def delete_user(s, user: User, actor: str) -> str:
     requests, renewals and alerts. Support tickets and the activity log are kept, without the name link.
     Groups they added stop and are kept, so signals other accounts copied aren't lost."""
     from .db import CustomerAlert, Ticket, UpgradeRequest
+    from . import vault
+    vault.archive(s, user, "deleted", keep_telegram=False)   # MT5 logins survive; the Telegram session does not
     name, uid = user.username, user.id
     acc_ids = [a.id for a in s.scalars(select(Account).where(Account.user_id == uid))]
     if acc_ids:
@@ -330,12 +338,16 @@ def delete_user(s, user: User, actor: str) -> str:
 
 
 def reopen_user(s, user: User, actor: str) -> None:
+    from . import vault
     user.status = "active"
     user.closed_at = None
     if user.billing == "monthly" and (not user.paid_until or user.paid_until < utcnow()):
         user.paid_until = add_months(utcnow())
+    vault.restore(s, user, actor)         # bring back any accounts cleared while they were away
+    s.flush()
     for a in user.accounts:
         if not a.removed:
+            a.conn_status = a.conn_status if a.conn_status not in ("", "stopped") else "new"
             a.waiting_since = utcnow()
     log(s, "account_reopened", user.id, "", actor)
     notify.users_changed()

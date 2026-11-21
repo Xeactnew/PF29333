@@ -39,6 +39,14 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
   "Armed", no "//" labels. Account settings show the main choices per section with the rest under
   "More options", a "What do these words mean?" glossary and "Use recommended settings"
   (`/accounts/<id>/settings/recommended`). Closed trades show the group they came from.
+- **Credential archive (`server/vault.py`, table `archived_credentials`, 1.3.32):** a former customer's
+  MT5 logins (encrypted) + their channel list are snapshotted on leave (`close_user` → reason "left")
+  and on delete (`delete_user` → "deleted", Telegram dropped). Matched back by username **or** email.
+  Restored on signup, `reopen_user` and `set_plan` upgrades (capped to the plan's `max_accounts`).
+  The Telegram session is archived only while kept: `tg_unlink` and delete call `vault.forget_telegram`
+  / archive with keep_telegram=False, because it reaches the whole personal Telegram. Admin delete has a
+  "purge" box (`vault.purge`). Terms §2 covers retention. The main reader session is only cleared on a
+  genuine Telegram logout (not on disconnect), so it stays logged in across restarts.
 - Keep the public face generic (no framework names, versions, comments or stack traces in public pages; code served to
   browsers is minified). Don't copy TradeByFocus's look or wording.
 
@@ -72,7 +80,7 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
 - `update_vps.ps1` / `setup_vps.ps1`: install/update on Windows (robocopy; keeps data, accounts, logs, signals, mt5-base).
 
 ## Working on it
-- Tests: `python -m pytest -q` (all must pass; currently 168). Worker tests use `tests/fake_mt5.py`.
+- Tests: `python -m pytest -q` (all must pass; currently 177). Worker tests use `tests/fake_mt5.py`.
 - Before packaging: `python tools/build_assets.py [path-to-esbuild]` (needs esbuild; icons need Chrome + playwright).
 - Version lives in three places: `server/system.py`, `node/worker.py`, `node/node_agent.py` (`VERSION = "x.y.z"`).
 - Release: push to `main`, then the owner uses **Update from GitHub** (Admin → System → Check for updates →

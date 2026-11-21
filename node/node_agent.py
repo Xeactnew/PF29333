@@ -22,7 +22,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-VERSION = "1.3.31"
+VERSION = "1.3.32"
 NODE_FILES = ("__init__.py", "node_agent.py", "worker.py", "trade_logic.py", "requirements-node.txt")
 RESTART_CODE = 0          # start_node.bat starts us again 10 s after we exit
 
