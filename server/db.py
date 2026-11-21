@@ -393,7 +393,7 @@ def _add_missing_columns(engine) -> None:
 
 OLD_CONTACT_TEXT = "To upgrade, message us on Telegram and pay directly. We'll switch your plan straight away."
 DEFAULT_SETTINGS = {
-    "gh_auto_update": True,      # install new commits on GitHub main by themselves (needs the GitHub token)
+    "gh_update_mode": "ask",     # new commits on GitHub main: ask (bot offers Install), auto, or off
     # house rules per VIP group (Telegram chat id). Fx by KD: "risk free" / "move SL to <price>" =
     # each trade's own entry + 15 pips, so late entries are protected the same way. Editable in Admin → Telegram.
     "group_rules": {"-1004498117492": {"be_lock_pips": 15.0, "sl_move_as_be": True}},

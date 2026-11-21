@@ -43,18 +43,20 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
 - `update_vps.ps1` / `setup_vps.ps1`: install/update on Windows (robocopy; keeps data, accounts, logs, signals, mt5-base).
 
 ## Working on it
-- Tests: `python -m pytest -q` (all must pass; currently 141). Worker tests use `tests/fake_mt5.py`.
+- Tests: `python -m pytest -q` (all must pass; currently 143). Worker tests use `tests/fake_mt5.py`.
 - Before packaging: `python tools/build_assets.py [path-to-esbuild]` (needs esbuild; icons need Chrome + playwright).
 - Version lives in three places: `server/system.py`, `node/worker.py`, `node/node_agent.py` (`VERSION = "x.y.z"`).
 - Release: push to `main`, then the owner uses **Update from GitHub** (Admin → System → Check for updates →
   Install, or `/update` in the admin bot). A zip of the folder as `pipsfarmer/…` still works too: send it to the
   Telegram admin bot and tap Install (or Admin → System → upload). The node self-updates from the website.
 
-## Releasing (automatic)
-- The VPS checks GitHub `main` every 5 minutes and installs new commits by itself (setting `gh_auto_update`,
-  Admin → System; needs the owner's read-only GitHub token saved there). It waits 10 min after a website start
-  and 3 min after a new signal, tries a commit at most twice, and the admin bot announces before and after.
-- So: **only push to main when the whole test suite passes**: a push to main goes live within minutes.
+## Releasing
+- **Ask the owner before pushing to `main`**: the VPS picks up every push.
+- The VPS checks GitHub `main` every 5 minutes (needs the owner's read-only token in Admin → System). Setting
+  `gh_update_mode` (Admin → System): **ask** (default: the admin bot offers each new commit once with
+  "Install now" / "Not now" buttons; nothing installs until tapped), **auto** (installs by itself, waiting 10 min
+  after a website start and 3 min after a new signal, max two tries per commit), or **off**.
+- Only push to main when the whole test suite passes.
 
 ## On the VPS (C:\PipsFarmer)
 - `data\pipsfarmer.db` (+ -wal), `logs\server.log` (VIP messages logged with result; ignored ones with their text),
@@ -66,6 +68,4 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
 - The owner's own relay posts "Pips Farmer VIP" (re-posts KD a minute later, sometimes with a no-SL zone 100 too low).
 - Admin: untick the "Pips Farmer" highlights group and "H and Savreena 💍" as VIP groups.
 - Email (Gmail app password), key backup, legal pages.
-- 1.3.23 was built where esbuild/Node weren't installed: `static/style.css` used build_assets' fallback minifier
-  and the one new line in `static/app.js` was added by hand. Run `python tools/build_assets.py` with esbuild next release.
 - The GitHub download, its PowerShell certificate fallback and customer alerts are only tested with fakes so far.

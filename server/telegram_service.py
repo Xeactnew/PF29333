@@ -835,6 +835,12 @@ async def _gh_callback(http, cb: dict, data: str) -> None:
         await _bot(http, "answerCallbackQuery", callback_query_id=cb["id"], text="Checking GitHub…")
         await _gh_check_reply(http, chat)
         return
+    if parts[1] == "later":
+        await _bot(http, "answerCallbackQuery", callback_query_id=cb["id"], text="OK, not now")
+        await _bot(http, "editMessageText", chat_id=chat, message_id=mid,
+                   text="⏸ Not installed. Nothing changes until you say so: send /update whenever you want it, "
+                        "and I'll ask again when there's a newer version.")
+        return
     if parts[1] != "go" or len(parts) < 3:
         await _bot(http, "answerCallbackQuery", callback_query_id=cb["id"], text="Cancelled")
         await _bot(http, "editMessageText", chat_id=chat, message_id=mid, text="Update cancelled.")
