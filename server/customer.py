@@ -597,15 +597,8 @@ async def account_remove(account_id: int, request: Request, s=Depends(db_session
     user = current_user(request, s)
     acc = _get_account(s, user, account_id)
     await form_data(request)
-    acc.removed = True
-    acc.copy_enabled = False
-    acc.node_id = None
-    acc.conn_status = "stopped"
-    acc.waiting_since = None
-    acc.password_enc = ""
-    services.log(s, "account_removed", user.id, acc.login, user.username, client_ip(request))
+    services.remove_account(s, acc, user.username, user.id)
     s.commit()
-    notify.users_changed()
     flash(request, "Account removed. Trades already open on it are left as they are.")
     return redirect("/accounts")
 

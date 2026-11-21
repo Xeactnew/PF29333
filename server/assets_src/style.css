@@ -200,6 +200,10 @@ fieldset .about { color: var(--straw-dim); font-size: 13.5px; margin: 0 0 12px; 
 .btn.primary:hover { background-position: 100% 0; box-shadow: 0 10px 32px -10px rgba(var(--c2-rgb),.95), inset 0 1px 0 rgba(255,255,255,.25); }
 .btn.danger { color: var(--rust); border-color: rgba(var(--down-rgb),.45); background: transparent; }
 .btn.danger:hover { background: rgba(var(--down-rgb),.1); }
+.danger-zone { border-color: rgba(var(--down-rgb),.35); }
+.plan-quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; align-items: center; }
+.plan-quick select { width: auto; min-width: 0; padding: 4px 8px; font-size: 12.5px; height: auto; }
+tr.sep td { padding-top: 14px; }
 .btn.small { padding: 5px 11px; font-size: 12.5px; }
 .btn.link { background: none; border: 0; color: var(--link); padding: 0; font-weight: 500; box-shadow: none; }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }

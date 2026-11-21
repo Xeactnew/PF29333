@@ -1,8 +1,18 @@
 {% extends "admin/base.html" %}
 {% block title %}Accounts{% endblock %}
+{% macro plan_quick(u) -%}
+{% if u %}<form method="post" action="/admin/users/{{ u.id }}/plan" class="plan-quick">{{ m.csrf_field(csrf) }}
+  <input type="hidden" name="next" value="{{ back }}"><input type="hidden" name="time_limit" value="keep">
+  <input type="hidden" name="paid_until" value="{{ u.paid_until.strftime('%Y-%m-%d') if u.paid_until else '' }}">
+  <select name="plan_id" aria-label="Plan for {{ u.username }}">{% for p in plans %}<option value="{{ p.id }}" {{ 'selected' if p.id == u.plan_id }}>{{ p.name }}</option>{% endfor %}</select>
+  <select name="billing" aria-label="Billing for {{ u.username }}">{% for v, l in [("free", "Free"), ("monthly", "Monthly"), ("lifetime", "Lifetime")] %}<option value="{{ v }}" {{ 'selected' if u.billing == v }}>{{ l }}</option>{% endfor %}</select>
+  <button class="btn small" type="submit">Save</button>
+</form>{% endif %}
+{%- endmacro %}
 {% block content %}
+{% set back = "/admin/accounts?show=" ~ show ~ ("&plan=" ~ plan if plan else "") ~ ("&status=" ~ status if status else "") ~ ("&sort=" ~ sort if sort else "") %}
 <div class="pagehead"><div><h1>Accounts</h1>
-  <p>Every customer MT5 account: size, profit and loss, open trades and the groups it copies. <b>Total</b> is everything on the account; <small>copied</small> is only PipsFarmer's trades. "Today" is the broker's trading day.</p></div>
+  <p>Every customer and their MT5 accounts: size, profit and loss, open trades and the groups it copies. Change a customer's plan right in the table (more options, like paid-until and time limits, on their own page). <b>Total</b> is everything on the account; <small>copied</small> is only PipsFarmer's trades. "Today" is the broker's trading day.</p></div>
   <div class="actions"><a class="btn" href="/admin/accounts.xlsx">Download Excel</a></div></div>
 
 {% if tots %}
@@ -18,7 +28,9 @@
 
 <section class="panel">
   <form method="get" class="actions" style="margin-bottom:14px">
-    <input type="text" name="q" value="{{ q }}" placeholder="Search customer, login or server" style="max-width:260px">
+    <select name="show" style="max-width:220px">{% for v, l in [("mt5", "MT5 accounts"), ("all", "All customers (" ~ users_total ~ ")"), ("none", "Customers without MT5")] %}<option value="{{ v }}" {{ 'selected' if show == v }}>{{ l }}</option>{% endfor %}</select>
+    <select name="plan" style="max-width:150px"><option value="">Any plan</option>{% for p in plans %}<option value="{{ p.key }}" {{ 'selected' if plan == p.key }}>{{ p.name }}</option>{% endfor %}</select>
+    <input type="text" name="q" value="{{ q }}" placeholder="Search customer, email, login or server" style="max-width:260px">
     <select name="status" style="max-width:160px"><option value="">Any status</option>{% for v in ["online", "starting", "waiting", "error", "stopped"] %}<option value="{{ v }}" {{ 'selected' if status == v }}>{{ v|capitalize }}</option>{% endfor %}</select>
     <select name="sort" style="max-width:170px">{% for v, l in [("id", "Newest first"), ("balance", "Biggest balance"), ("today", "Best today"), ("month", "Best 30 days"), ("all", "Best all time"), ("worst", "Worst 30 days")] %}<option value="{{ v }}" {{ 'selected' if sort == v }}>{{ l }}</option>{% endfor %}</select>
     <button class="btn" type="submit">Show</button>
@@ -28,7 +40,7 @@
         <th class="r">Today</th><th class="r">7 days</th><th class="r">30 days</th><th class="r">All time</th><th>Groups</th></tr>
     {% for r in rows %}
     <tr data-href="/admin/accounts/{{ r.id }}">
-      <td><a href="/admin/users/{{ r.user_id }}">{{ r.user }}</a><br><small>{{ r.plan }}</small></td>
+      <td><a href="/admin/users/{{ r.user_id }}">{{ r.user }}</a>{{ plan_quick(r.account.user) }}</td>
       <td><a href="/admin/accounts/{{ r.id }}">{{ r.login }}</a><br><small>{{ r.server }}</small></td>
       <td>{{ m.status(r.account) }}{% if not r.copy %}<br><small>copying paused</small>{% endif %}{% if r.error %}<br><small class="down">{{ r.error[:80] }}</small>{% endif %}</td>
       <td class="r num">{{ r.balance|money(r.cur) }}</td>
@@ -39,7 +51,17 @@
       {% endfor %}
       <td><small>{{ r.groups|join(", ") or "none" }}</small></td>
     </tr>
-    {% else %}<tr><td colspan="11" class="muted">No accounts match.</td></tr>{% endfor %}
+    {% else %}{% if not no_mt5 %}<tr><td colspan="11" class="muted">{{ "No customers match." if show != "mt5" else "No accounts match." }}</td></tr>{% endif %}{% endfor %}
+    {% if no_mt5 %}
+    {% if rows %}<tr class="sep"><td colspan="11"><small class="muted">Customers without an MT5 account</small></td></tr>{% endif %}
+    {% for u in no_mt5 %}
+    <tr data-href="/admin/users/{{ u.id }}">
+      <td><a href="/admin/users/{{ u.id }}">{{ u.username }}</a>{{ plan_quick(u) }}</td>
+      <td class="muted">No MT5 account<br><small>{{ u.email or "no email" }}</small></td>
+      <td>{{ m.user_status(u) }}<br><small>joined {{ u.created_at|date }}</small></td>
+      <td colspan="8" class="muted"><small>Nothing to show until they add an MT5 account.</small></td>
+    </tr>
+    {% endfor %}{% endif %}
   </table></div>
 </section>
 

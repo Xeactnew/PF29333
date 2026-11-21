@@ -285,6 +285,46 @@ def close_user(s, user: User, actor: str, reason: str = "") -> None:
     notify.users_changed()
 
 
+def remove_account(s, acc: Account, actor: str, user_id: int | None = None) -> None:
+    """Stop and remove an MT5 account (its MT5 on the VPS stops; trades already open stay on the broker).
+    Its history is kept for reports; the saved password is wiped."""
+    acc.removed = True
+    acc.copy_enabled = False
+    acc.node_id = None
+    acc.conn_status = "stopped"
+    acc.waiting_since = None
+    acc.password_enc = ""
+    log(s, "account_removed", user_id if user_id is not None else acc.user_id, acc.login, actor)
+    notify.users_changed()
+
+
+def delete_user(s, user: User, actor: str) -> str:
+    """Delete a customer for good: their MT5 accounts with all their trades and history, their plan
+    requests, renewals and alerts. Support tickets and the activity log are kept, without the name link.
+    Groups they added stop and are kept, so signals other accounts copied aren't lost."""
+    from .db import CustomerAlert, Ticket, UpgradeRequest
+    name, uid = user.username, user.id
+    acc_ids = [a.id for a in s.scalars(select(Account).where(Account.user_id == uid))]
+    if acc_ids:
+        for model in (Deal, Snapshot, Event, AccountSource):
+            s.execute(model.__table__.delete().where(model.__table__.c.account_id.in_(acc_ids)))
+    for src in s.scalars(select(Source).where(Source.owner_user_id == uid)):
+        src.owner_user_id = None
+        src.active = False
+    for model in (Renewal, UpgradeRequest, CustomerAlert):
+        s.execute(model.__table__.delete().where(model.__table__.c.user_id == uid))
+    for model in (Ticket, Activity):
+        s.execute(model.__table__.update().where(model.__table__.c.user_id == uid).values(user_id=None))
+    for a in list(user.accounts):
+        s.delete(a)
+    s.flush()
+    s.delete(user)
+    s.flush()
+    log(s, "customer_deleted", None, f"{name} (#{uid}), {len(acc_ids)} MT5 account(s)", actor)
+    notify.users_changed()
+    return name
+
+
 def reopen_user(s, user: User, actor: str) -> None:
     user.status = "active"
     user.closed_at = None

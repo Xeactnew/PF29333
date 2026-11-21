@@ -215,6 +215,9 @@ async def user_plan(user_id: int, request: Request, s=Depends(db_session)):
     notify.users_changed()
     flash(request, f"{user.username} is now on {plan.name} ({billing})"
                    + (f", access until {user.expires_at:%d %b %Y}." if user.expires_at else "."))
+    back = str(form.get("next") or "")
+    if re.fullmatch(r"/admin/[\w/\-]*(\?[\w=&%\-+.]*)?", back):     # e.g. back to the Accounts list
+        return redirect(back)
     return redirect(f"/admin/users/{user.id}")
 
 
@@ -324,6 +327,21 @@ async def user_close(user_id: int, request: Request, s=Depends(db_session)):
     return redirect(f"/admin/users/{user.id}")
 
 
+@router.post("/users/{user_id}/delete")
+async def user_delete(user_id: int, request: Request, s=Depends(db_session)):
+    """Worst case: delete a customer for good. They have to type the username to confirm."""
+    admin = current_admin(request, s)
+    form = await form_data(request)
+    user = _user(s, user_id)
+    if str(form.get("confirm", "")).strip() != user.username:
+        flash(request, f"Not deleted: type {user.username} exactly to confirm.", "err")
+        return redirect(f"/admin/users/{user.id}#delete")
+    name = services.delete_user(s, user, admin.username)
+    s.commit()
+    flash(request, f"{name} deleted, with their MT5 accounts and history.")
+    return redirect("/admin/accounts?show=all")
+
+
 @router.post("/users/{user_id}/reopen")
 async def user_reopen(user_id: int, request: Request, s=Depends(db_session)):
     admin = current_admin(request, s)
@@ -364,13 +382,32 @@ def accounts_list(request: Request, s=Depends(db_session)):
     q = request.query_params.get("q", "").strip()
     status = request.query_params.get("status", "")
     sort = request.query_params.get("sort", "id")
-    rows = reports.account_rows(s, term=q, status=status)
+    show = request.query_params.get("show", "mt5")
+    show = show if show in ("mt5", "all", "none") else "mt5"
+    plan_key = request.query_params.get("plan", "")
+    rows = [] if show == "none" or status == "none" else reports.account_rows(s, term=q, status=status)
+    if plan_key:
+        rows = [r for r in rows if r["account"].user and r["account"].user.plan
+                and r["account"].user.plan.key == plan_key]
     keys = {"balance": lambda r: -r["balance"], "today": lambda r: -r["pnl"]["today"]["total"],
             "month": lambda r: -r["pnl"]["month"]["total"], "all": lambda r: -r["pnl"]["all"]["total"],
             "worst": lambda r: r["pnl"]["month"]["total"], "id": lambda r: -r["id"]}
     rows.sort(key=keys.get(sort, keys["id"]))
-    return render(request, "admin/accounts.html", _ctx(admin, rows=rows, tots=reports.totals(rows), q=q,
-                  status=status, sort=sort, vip=reports.vip_groups(s)))
+    tots = reports.totals(rows)
+    no_mt5 = []
+    if show in ("all", "none") and not (status and status != "none"):
+        # customers with no MT5 account connected (signed up, never added one, or removed it)
+        with_acc = set(s.scalars(select(Account.user_id).where(Account.removed.is_(False))))
+        uq = select(User).order_by(User.id.desc())
+        if q:
+            uq = uq.where(or_(User.username.ilike(f"%{q}%"), User.email.ilike(f"%{q}%")))
+        if plan_key:
+            uq = uq.join(Plan).where(Plan.key == plan_key)
+        no_mt5 = [u for u in s.scalars(uq) if u.id not in with_acc]
+    return render(request, "admin/accounts.html", _ctx(admin, rows=rows, tots=tots, q=q,
+                  status=status, sort=sort, vip=reports.vip_groups(s), show=show, plan=plan_key, no_mt5=no_mt5,
+                  plans=list(s.scalars(select(Plan).order_by(Plan.sort))),
+                  users_total=s.scalar(select(func.count()).select_from(User)) or 0))
 
 
 @router.get("/accounts.xlsx")
@@ -410,6 +447,11 @@ async def account_action(account_id: int, request: Request, s=Depends(db_session
     elif action == "restart":
         services.command(s, acc.id, "restart")
         flash(request, "Restart sent.")
+    elif action == "remove":
+        services.remove_account(s, acc, admin.username)
+        s.commit()
+        flash(request, f"MT5 account {acc.login} removed. Its MT5 has stopped; trades already open stay on the broker.")
+        return redirect(f"/admin/users/{acc.user_id}")
     elif action == "requeue":
         acc.node_id = None
         acc.waiting_since = utcnow()

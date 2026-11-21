@@ -11,6 +11,7 @@
     <button class="btn" name="action" value="restart">Restart MT5</button>
     <button class="btn" name="action" value="requeue">Move to another VPS</button>
     <button class="btn danger" name="action" value="close_all" data-confirm="Close all PipsFarmer trades on this account?">Close all trades</button>
+    <button class="btn danger" name="action" value="remove" data-confirm="Remove MT5 account {{ acc.login }}? Its MT5 stops and the saved password is wiped. Trades already open stay on the broker.">Remove account</button>
   </form>
 </div>
 {% if acc.conn_error %}<div class="flash err">{{ acc.conn_error }}</div>{% endif %}

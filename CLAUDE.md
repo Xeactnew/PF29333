@@ -22,6 +22,10 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
   in setting `optimise_requests` and pings the admin bot. Answer in Admin → Telegram → Optimisation
   requests (not possible + note), or optimise it by replaying it and adding house rules for that chat.
   New plan features reach existing plans through `db.seed` (missing keys only).
+- Admin → Accounts: filter MT5 accounts / all customers / customers without MT5, by plan; plan + billing
+  change inline (posts to /admin/users/<id>/plan with `next`). "Remove account" on an MT5 account page
+  (`services.remove_account`); "Delete customer for good" on the customer page (type the username;
+  `services.delete_user` deletes accounts + deals/snapshots/events, keeps tickets and activity unlinked).
 - Add-account / login forms: Broker → Server dropdowns (`brokers.choices` + `_macros.server_picker`),
   "isn't listed" opens a typed box; without JavaScript only the typed box shows.
 - Keep the public face generic (no framework names, versions, comments or stack traces in public pages; code served to
@@ -57,7 +61,7 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
 - `update_vps.ps1` / `setup_vps.ps1`: install/update on Windows (robocopy; keeps data, accounts, logs, signals, mt5-base).
 
 ## Working on it
-- Tests: `python -m pytest -q` (all must pass; currently 153). Worker tests use `tests/fake_mt5.py`.
+- Tests: `python -m pytest -q` (all must pass; currently 155). Worker tests use `tests/fake_mt5.py`.
 - Before packaging: `python tools/build_assets.py [path-to-esbuild]` (needs esbuild; icons need Chrome + playwright).
 - Version lives in three places: `server/system.py`, `node/worker.py`, `node/node_agent.py` (`VERSION = "x.y.z"`).
 - Release: push to `main`, then the owner uses **Update from GitHub** (Admin → System → Check for updates →

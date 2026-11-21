@@ -130,4 +130,13 @@ Password: {{ new_login[1] }}</div>
   </section>
 </div>
 </div>
+
+<section class="panel danger-zone" id="delete" style="margin-top:18px">
+  <h2>Delete customer</h2>
+  <p class="muted">Worst case only, and it can't be undone. Deletes {{ user.username }}, their MT5 accounts (MT5 stops; trades already open stay on the broker) and all their trade history, plan requests and alerts. Support tickets and the activity log are kept. To only stop them, use <b>Cancel account</b> above instead.</p>
+  <form method="post" action="/admin/users/{{ user.id }}/delete" autocomplete="off">{{ m.csrf_field(csrf) }}
+    <div class="field"><label for="del-confirm">Type <b>{{ user.username }}</b> to confirm</label><input id="del-confirm" name="confirm" type="text" autocapitalize="off" spellcheck="false" required></div>
+    <button class="btn danger" type="submit" data-confirm="Delete {{ user.username }} for good?">Delete customer for good</button>
+  </form>
+</section>
 {% endblock %}
