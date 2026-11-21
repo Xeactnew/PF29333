@@ -35,6 +35,9 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
     fallback with the token in an env var. Installed sha: `data\installed-commit.txt` (written by update_vps.ps1).
   - Channels page never waits on Telegram: `telegram_service.dialogs_for_page` (cache, background refresh,
     2.5 s wait, clear loading/error states).
+- `research.py`: read-only research export for backtesting: the VIP groups' last 90 days of messages
+  (`data/research/messages-<chat>.jsonl`) and M1 gold candles a worker reads with `copy_rates_range`
+  (`data/research/prices-acc<id>.csv`). Runs once after install (setting `research_v1`) and from Admin → System.
 - `node/`: runs on each VPS. `node_agent.py` manages one `worker.py` per account (portable MT5 copied from the
   ready-made `C:\PipsFarmer\mt5-base`), shares the broker list, self-updates. `worker.py` places and manages trades
   (layers, instant entries, breakeven, partials, levels, daily limits, news, one-trade-per-idea, min SL, typo guard,
@@ -43,7 +46,7 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
 - `update_vps.ps1` / `setup_vps.ps1`: install/update on Windows (robocopy; keeps data, accounts, logs, signals, mt5-base).
 
 ## Working on it
-- Tests: `python -m pytest -q` (all must pass; currently 142). Worker tests use `tests/fake_mt5.py`.
+- Tests: `python -m pytest -q` (all must pass; currently 144). Worker tests use `tests/fake_mt5.py`.
 - Before packaging: `python tools/build_assets.py [path-to-esbuild]` (needs esbuild; icons need Chrome + playwright).
 - Version lives in three places: `server/system.py`, `node/worker.py`, `node/node_agent.py` (`VERSION = "x.y.z"`).
 - Release: push to `main`, then the owner uses **Update from GitHub** (Admin → System → Check for updates →

@@ -31,7 +31,9 @@ async def lifespan(app: FastAPI):
         logging.getLogger("pf").info("PipsFarmer %s starting", system.VERSION)
     tasks = []
     if not config.DISABLE_BACKGROUND:
-        tasks = [asyncio.create_task(scheduler.run_all()), asyncio.create_task(telegram_service.run_all())]
+        from . import research
+        tasks = [asyncio.create_task(scheduler.run_all()), asyncio.create_task(telegram_service.run_all()),
+                 asyncio.create_task(research.run_once_after_install())]
     yield
     for t in tasks:
         t.cancel()

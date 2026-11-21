@@ -9,6 +9,7 @@ class FakeMT5:
     TRADE_ACTION_DEAL, TRADE_ACTION_PENDING, TRADE_ACTION_SLTP, TRADE_ACTION_MODIFY, TRADE_ACTION_REMOVE = 1, 5, 6, 7, 8
     ORDER_FILLING_FOK, ORDER_FILLING_IOC, ORDER_FILLING_RETURN = 0, 1, 2
     ORDER_TIME_GTC = 0
+    TIMEFRAME_M1 = 1
     CONTRACT = 100
 
     def __init__(self, bid=4040.0, spread=0.2, balance=10000.0, symbol="XAUUSD.s"):
@@ -133,6 +134,12 @@ class FakeMT5:
 
     def orders_get(self, **kw):
         return list(self.orders.values())
+
+    def copy_rates_range(self, symbol, timeframe, start, end):
+        """One candle per minute between start and end (only reading history)."""
+        a, b = int(start.timestamp()) // 60 * 60, int(end.timestamp())
+        return [{"time": x, "open": 4040.0, "high": 4041.0, "low": 4039.0, "close": 4040.5,
+                 "tick_volume": 10, "spread": 20} for x in range(a, b, 60)]
 
     def history_deals_get(self, a, b):
         return list(self.deals)

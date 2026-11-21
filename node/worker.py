@@ -17,14 +17,14 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import trade_logic as tl  # noqa: E402
 
 MAGIC = 770077
-VERSION = "1.3.27"
+VERSION = "1.3.28"
 RECONNECT_AFTER = 120           # seconds MT5 may be off the broker before we log in again ourselves
 SL_WAIT_MIN = 30                # how long a signal without a stop loss waits for the group to post one
 FIRST_START_TIMEOUT = 300_000   # a brand-new MT5 copy compiles its examples and updates itself first
@@ -1015,6 +1015,8 @@ class Worker:
                         self.close_everything("requested from the website")
                     elif cmd == "restart":
                         self.restart_requested = True
+                    elif cmd == "export_prices":
+                        self.export_prices(int(ev["command"].get("days", 90)))
             except Exception as e:  # noqa: BLE001
                 log.exception("event %s", ev.get("id"))
                 self.note(f"error handling event: {e}")
@@ -1034,6 +1036,29 @@ class Worker:
         resp = self.api.poll(body)
         self.pending_ack = None
         self.apply_poll(resp)
+
+    def export_prices(self, days: int = 90) -> int:
+        """Research: send M1 candles from MT5's history to the website, a week at a time.
+        Only reads history (copy_rates_range); it never touches orders or positions."""
+        mt5 = self.mt5
+        if self.status != "online" or not self.symbol:
+            self.note("price export skipped: MT5 isn't online")
+            return 0
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(days=days)
+        sent, t0 = 0, start
+        while t0 < end:
+            t1 = min(end, t0 + timedelta(days=7))
+            rates = mt5.copy_rates_range(self.symbol, mt5.TIMEFRAME_M1, t0, t1)
+            rows = [[int(r["time"]), float(r["open"]), float(r["high"]), float(r["low"]), float(r["close"]),
+                     int(r["tick_volume"]), int(r["spread"])] for r in (rates if rates is not None else [])]
+            for i in range(0, len(rows), 5000):
+                self.api.post(f"/api/worker/{self.aid}/research", {"symbol": self.symbol, "rows": rows[i:i + 5000]},
+                              timeout=60)
+            sent += len(rows)
+            t0 = t1
+        self.note(f"sent {sent} one-minute candles ({days} days) for research")
+        return sent
 
     def sync_deals(self):
         deals = self.collect_deals()

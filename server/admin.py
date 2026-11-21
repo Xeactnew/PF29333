@@ -911,7 +911,12 @@ def system_page(request: Request, s=Depends(db_session)):
         gh_installed=gh.installed_commit(), gh_repo=gh.REPO, gh_mode=_update_mode(s),
         public_url=runtime.public_url(), values=values, backups=backups, is_windows=system.IS_WINDOWS,
         server_log=system.tail(system.LOG_DIR / "server.log", 80), admins=list(s.scalars(select(Admin))),
-        icon_v=_icon_version(), icon_custom=_icon_custom(), protection=_protection(s)))
+        icon_v=_icon_version(), icon_custom=_icon_custom(), protection=_protection(s), research=_research()))
+
+
+def _research() -> dict:
+    from . import research
+    return research.status()
 
 
 def _update_mode(s) -> str:
@@ -997,6 +1002,21 @@ async def system_github_auto(request: Request, s=Depends(db_session)):
     flash(request, "Updates you've agreed with Claude now install by themselves within about 5 minutes."
           if mode == "auto" else "GitHub isn't checked any more. Use “Check for updates” when you want one.")
     return redirect("/admin/system#github")
+
+
+@router.post("/system/research")
+async def system_research(request: Request, s=Depends(db_session)):
+    """Export the groups' history and M1 prices again, for backtesting (read-only)."""
+    admin = current_admin(request, s)
+    await form_data(request)
+    from . import research
+    acc = research.request_prices()
+    n = await research.export_messages()
+    services.log(s, "research_export", None, f"{n} messages, prices from account {acc}", admin.username)
+    s.commit()
+    flash(request, f"Research export: {n} messages saved" + (f", prices asked from account {acc}." if acc else
+          ". No MT5 account online for prices."))
+    return redirect("/admin/system#research")
 
 
 @router.post("/system/github/check")

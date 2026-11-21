@@ -57,6 +57,15 @@
   </form>
 </section>
 
+<section class="panel" id="research">
+  <h2>Research data</h2>
+  <p class="muted">For backtesting the signal groups: the groups' last 90 days of messages and one-minute gold prices read from MT5's history. Read-only: nothing is traded or changed. It runs once by itself after an update; press again for fresh data.</p>
+  {% if research.messages %}<p>Messages: {{ research.messages }}</p>{% endif %}
+  {% if research.prices %}<p>Prices: {{ research.prices }}</p>{% endif %}
+  {% if research.files %}<p class="muted" style="font-size:13px">Files: {{ research.files|join(", ") }}</p>{% endif %}
+  <form method="post" action="/admin/system/research">{{ m.csrf_field(csrf) }}<button class="btn" type="submit">Export research data</button></form>
+</section>
+
 <section class="panel">
   <h2>Restart protection</h2>
   <p class="muted">What brings this VPS back by itself after a restart, a crash or a power cut. After a restart the bot tells you when everything is back.</p>

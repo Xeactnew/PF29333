@@ -141,6 +141,18 @@ async def worker_deals(account_id: int, request: Request, s=Depends(db_session),
     return {"added": len(new)}
 
 
+@router.post("/worker/{account_id}/research")
+async def worker_research(account_id: int, request: Request, s=Depends(db_session),
+                          authorization: str | None = Header(None)):
+    """M1 candles a worker read from its MT5 history, for backtesting (see research.py)."""
+    node = _node(s, authorization)
+    acc = _account(s, node, account_id)
+    body = await request.json()
+    from . import research
+    n = research.save_prices(acc.id, str(body.get("symbol", ""))[:32], body.get("rows") or [])
+    return {"saved": n}
+
+
 def _alerts(s, fn, acc, data) -> None:
     """Customer alerts run after the worker's data is safely saved: a problem here loses an alert, never a deal."""
     try:
