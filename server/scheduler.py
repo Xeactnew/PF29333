@@ -491,6 +491,81 @@ async def run_signals_log() -> None:
         await asyncio.sleep(300)
 
 
+# ------------------------------------------------------------ automatic updates from GitHub
+
+AUTO_EVERY = 300            # check GitHub every 5 minutes
+AUTO_START_GRACE = 600      # never update in the first 10 minutes after the website starts
+AUTO_QUIET = 180            # ...or within 3 minutes of a new signal (workers restart for ~a minute)
+AUTO_MAX_TRIES = 2          # a commit that doesn't install twice is left for a person to look at
+_auto = {"tries": {}, "announced": False}
+
+
+def github_auto_tick(now: float | None = None) -> str:
+    """New commit on main → install it, when it's safe to. Returns what it did (for the log and tests)."""
+    from . import github_update as gh
+    now = now or time.time()
+    with SessionLocal() as s:
+        if not get_setting(s, "gh_auto_update") or not gh.token_hint():
+            return "off"
+        recent_signal = s.scalar(select(func.max(Signal.created_at)))
+    if not system.IS_WINDOWS:
+        return "not windows"
+    if now - _website_started < AUTO_START_GRACE:
+        return "just started"
+    if recent_signal and (utcnow() - recent_signal).total_seconds() < AUTO_QUIET:
+        return "signal just in"
+    c = gh.check()
+    if not c["new"]:
+        return "up to date"
+    tries = _auto["tries"].get(c["sha"], 0)
+    if tries >= AUTO_MAX_TRIES:
+        return "gave up"
+    _auto["tries"][c["sha"]] = tries + 1
+    if tries == 1:
+        notify.send_admins(f"⚠️ Update {c['short']} didn't install the first time; trying once more.")
+    gh.install(c["sha"], "auto")
+    with SessionLocal() as s:
+        services.log(s, "update_started", None, f"github {c['short']} (automatic)", "auto")
+        s.commit()
+    ver = f"v{c['version']} " if c["version"] else ""
+    notify.send_admins(f"⬆️ Installing {ver}from GitHub automatically: “{c['message']}”. "
+                       "Back in about a minute; open trades stay safe.")
+    return "installing"
+
+
+def announce_update() -> str | None:
+    """Once after a restart: if a different GitHub commit is now installed, say so."""
+    from . import github_update as gh
+    inst = gh.installed_commit()
+    with SessionLocal() as s:
+        last = get_setting(s, "gh_announced") or ""
+        if not inst or inst == last:
+            return None
+        set_setting(s, "gh_announced", inst)
+        s.commit()
+    if not last:                       # first time we know the commit: nothing to compare with
+        return None
+    text = f"✅ Updated: now running v{system.VERSION} (commit {inst[:7]})."
+    notify.send_admins(text)
+    return text
+
+
+async def run_github_auto() -> None:
+    await asyncio.sleep(90)
+    try:
+        await asyncio.to_thread(announce_update)
+    except Exception:  # noqa: BLE001
+        log.exception("announce update")
+    while True:
+        try:
+            did = await asyncio.to_thread(github_auto_tick)
+            if did not in ("off", "up to date", "not windows", "just started"):
+                log.info("github auto-update: %s", did)
+        except Exception as e:  # noqa: BLE001
+            log.warning("github auto-update: %s", e)
+        await asyncio.sleep(AUTO_EVERY)
+
+
 async def run_all() -> None:
     await asyncio.gather(run_assignment(), run_renewals(), run_news(), run_cleanup(), run_watch(), run_daily(),
-                         run_mail(), run_signals_log(), run_customer_daily())
+                         run_mail(), run_signals_log(), run_customer_daily(), run_github_auto())

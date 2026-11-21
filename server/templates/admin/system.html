@@ -27,6 +27,11 @@
       <form method="post" action="/admin/system/github/check">{{ m.csrf_field(csrf) }}<button class="btn" type="submit">Check for updates</button></form>
       <form method="post" action="/admin/system/github/token">{{ m.csrf_field(csrf) }}<input type="hidden" name="action" value="remove"><button class="btn" type="submit" data-confirm="Remove the saved GitHub token?">Remove token</button></form>
     </div>
+    <form method="post" action="/admin/system/github/auto" style="margin-top:12px">
+      {{ m.csrf_field(csrf) }}
+      <label class="check"><input type="checkbox" name="auto" {{ 'checked' if gh_auto }} onchange="this.form.submit()"> <span><b>Install new versions automatically</b> · checks GitHub every 5 minutes, waits if a signal just came in, and the bot tells you before and after</span></label>
+      <noscript><button class="btn small" type="submit">Save</button></noscript>
+    </form>
     {% if gh_error %}<p class="flash err" style="margin-top:10px">{{ gh_error }}</p>{% endif %}
     {% if gh_check %}
       <table style="margin-top:12px">

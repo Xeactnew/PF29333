@@ -43,12 +43,18 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
 - `update_vps.ps1` / `setup_vps.ps1`: install/update on Windows (robocopy; keeps data, accounts, logs, signals, mt5-base).
 
 ## Working on it
-- Tests: `python -m pytest -q` (all must pass; currently 137). Worker tests use `tests/fake_mt5.py`.
+- Tests: `python -m pytest -q` (all must pass; currently 141). Worker tests use `tests/fake_mt5.py`.
 - Before packaging: `python tools/build_assets.py [path-to-esbuild]` (needs esbuild; icons need Chrome + playwright).
 - Version lives in three places: `server/system.py`, `node/worker.py`, `node/node_agent.py` (`VERSION = "x.y.z"`).
 - Release: push to `main`, then the owner uses **Update from GitHub** (Admin → System → Check for updates →
   Install, or `/update` in the admin bot). A zip of the folder as `pipsfarmer/…` still works too: send it to the
   Telegram admin bot and tap Install (or Admin → System → upload). The node self-updates from the website.
+
+## Releasing (automatic)
+- The VPS checks GitHub `main` every 5 minutes and installs new commits by itself (setting `gh_auto_update`,
+  Admin → System; needs the owner's read-only GitHub token saved there). It waits 10 min after a website start
+  and 3 min after a new signal, tries a commit at most twice, and the admin bot announces before and after.
+- So: **only push to main when the whole test suite passes**: a push to main goes live within minutes.
 
 ## On the VPS (C:\PipsFarmer)
 - `data\pipsfarmer.db` (+ -wal), `logs\server.log` (VIP messages logged with result; ignored ones with their text),

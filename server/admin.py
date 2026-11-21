@@ -908,7 +908,7 @@ def system_page(request: Request, s=Depends(db_session)):
     return render(request, "admin/system.html", _ctx(
         admin, version=system.VERSION, update_log=system.update_log(), tunnel=system.tunnel_status(),
         gh_hint=gh.token_hint(), gh_check=gh.last_check(), gh_error=gh.last_error(),
-        gh_installed=gh.installed_commit(), gh_repo=gh.REPO,
+        gh_installed=gh.installed_commit(), gh_repo=gh.REPO, gh_auto=bool(get_setting(s, "gh_auto_update")),
         public_url=runtime.public_url(), values=values, backups=backups, is_windows=system.IS_WINDOWS,
         server_log=system.tail(system.LOG_DIR / "server.log", 80), admins=list(s.scalars(select(Admin))),
         icon_v=_icon_version(), icon_custom=_icon_custom(), protection=_protection(s)))
@@ -978,6 +978,19 @@ async def system_github_token(request: Request, s=Depends(db_session)):
     s.commit()
     flash(request, "GitHub token saved. Press “Check for updates” to try it.")
     return redirect("/admin/system")
+
+
+@router.post("/system/github/auto")
+async def system_github_auto(request: Request, s=Depends(db_session)):
+    admin = current_admin(request, s)
+    form = await form_data(request)
+    on = form.get("auto") == "on"
+    set_setting(s, "gh_auto_update", on)
+    services.log(s, "github_auto", None, "on" if on else "off", admin.username)
+    s.commit()
+    flash(request, "Automatic updates on: new versions on GitHub install by themselves within about 5 minutes."
+          if on else "Automatic updates off: use “Install update” when you want one.")
+    return redirect("/admin/system#github")
 
 
 @router.post("/system/github/check")
