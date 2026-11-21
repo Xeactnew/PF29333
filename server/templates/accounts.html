@@ -19,7 +19,7 @@
     {% endfor %}
     {% else %}
     <h2>No accounts yet</h2>
-    <p class="muted">Add an MT5 account on the right. We run MT5 for you on our servers, so you don't need to keep your computer on.</p>
+    <p class="muted">Add one with the form here. We run MT5 for you on our servers, so you don't need to keep your computer on.</p>
     {% endif %}
   </section>
 
@@ -31,7 +31,8 @@
     {% if free_slots == 0 %}<div class="flash warn">Our servers are full right now. You can still add your account: it joins the queue and connects by itself when a slot frees up.</div>{% endif %}
     <form method="post" action="/accounts/add" autocomplete="off">
       {{ m.csrf_field(csrf) }}
-      <div class="field"><label for="login">MT5 login number</label><input id="login" name="login" type="text" inputmode="numeric" required placeholder="12345678"></div>
+      <div class="field"><label for="login">MT5 login number</label><input id="login" name="login" type="text" inputmode="numeric" required placeholder="12345678">
+        <div class="hint">Only numbers. It's in the email your broker sent when you opened the account.</div></div>
       <div class="field"><label for="pw">Password</label><input id="pw" name="password" type="password" required autocomplete="new-password">
         <div class="hint">The main trading password. An investor (read-only) password can't place trades.</div></div>
       {{ m.server_picker(broker_choices, prop_firms) }}

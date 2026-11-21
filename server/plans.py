@@ -105,10 +105,27 @@ DEFAULT_ACCOUNT_SETTINGS = {
     "min_sl_pips": 20.0,          # skip calls whose stop is tighter than this (spread alone can hit it); 0 = any
     "max_entry_away_pct": 1.5,    # skip calls whose entry is this far from the price (a typo like 3616 for 3716)
     "require_tp": False,          # skip calls with no take profit at all
+    # ---- 1.3.31: options taken from the FundingPips copier
+    "close_worst_entry": True,    # "close the worst / first entry": close it (or stop at entry if in profit), rest to BE
+    "move_entries_on_edit": True, # the group edits its entry zone: move the unfilled entries with it
+    "tp1_from_bars": False,       # decide "price reached TP1" from 1-minute candles (catches spikes between checks)
+    "max_total_loss": 0.0,        # most the account may lose overall (money), 0 = off
+    "max_total_loss_pct": 0.0,    # ... or % of the starting balance, 0 = off
+    "start_balance": 0.0,         # starting balance for the overall limit; 0 = the balance when the limit was set
+    "limit_buffer_pct": 100.0,    # act at this % of every loss limit (90 = stop 10% early, prop-firm style)
+    "check_worst_case": False,    # skip a new trade if every open trade + it hitting SL would break a loss limit
+    "no_hedging": "off",          # off / close_old (an opposite call closes our open trades) / skip_new
+    "tp_partials": "40,30,30",    # with tp_target "partials": % of each trade closed at TP1, TP2, TP3...
+    "runner_pct": 0.0,            # with partials: keep this % open after the last TP, no TP, trailing stop
+    "runner_trail_pips": 0.0,     # runner's stop trails this far behind the best price (0 = stays at the TP before)
+    "hand_sl_pips": 0.0,          # gold trades opened by hand with no stop get one this far away; 0 = off
+    "hand_be_pips": 0.0,          # ... their stop goes to entry (+ lock pips) once this far in profit; 0 = off
+    "hand_trail_pips": 0.0,       # ... and then trails this far behind the best price; 0 = off
 }
 
 LOT_MODES = ("fixed", "risk_percent", "risk_amount")
-TP_TARGETS = ("spread", "tp1", "tp2", "tp3", "last")
+TP_TARGETS = ("spread", "tp1", "tp2", "tp3", "last", "partials")
+HEDGING = ("off", "close_old", "skip_new")
 DIRECTIONS = ("both", "buy", "sell")
 
 
@@ -150,7 +167,8 @@ def clean_settings(raw: dict) -> dict:
     d["tp_target"] = raw.get("tp_target") if raw.get("tp_target") in TP_TARGETS else d["tp_target"]
     for b in ("breakeven_at_tp1", "cancel_pending_after_tp1", "cancel_pending_on_be", "follow_updates", "require_sl", "instant_entry",
               "smart_entry", "close_on_limit", "news_protection", "news_close_trades",
-              "skip_if_tp1_passed", "one_trade_per_idea", "require_tp"):
+              "skip_if_tp1_passed", "one_trade_per_idea", "require_tp", "close_worst_entry",
+              "move_entries_on_edit", "tp1_from_bars", "check_worst_case"):
         if b in raw:
             d[b] = raw[b] in (True, "1", "on", "true", 1)
     d["be_offset_pips"] = _num(raw.get("be_offset_pips"), d["be_offset_pips"], 0, 100)
@@ -173,8 +191,33 @@ def clean_settings(raw: dict) -> dict:
     d["max_open_signals"] = _num(raw.get("max_open_signals"), d["max_open_signals"], 0, 100, int)
     d["session_start"] = _hhmm(raw.get("session_start", d["session_start"]), "00:00")
     d["session_end"] = _hhmm(raw.get("session_end", d["session_end"]), "23:59")
+    d["max_total_loss"] = _num(raw.get("max_total_loss"), d["max_total_loss"], 0, 1_000_000_000)
+    d["max_total_loss_pct"] = _num(raw.get("max_total_loss_pct"), d["max_total_loss_pct"], 0, 100)
+    d["start_balance"] = _num(raw.get("start_balance"), d["start_balance"], 0, 1_000_000_000)
+    d["limit_buffer_pct"] = _num(raw.get("limit_buffer_pct"), d["limit_buffer_pct"], 50, 100)
+    d["no_hedging"] = raw.get("no_hedging") if raw.get("no_hedging") in HEDGING else d["no_hedging"]
+    d["tp_partials"] = clean_partials(raw.get("tp_partials", d["tp_partials"])) or d["tp_partials"]
+    d["runner_pct"] = _num(raw.get("runner_pct"), d["runner_pct"], 0, 90)
+    for k in ("runner_trail_pips", "hand_sl_pips", "hand_be_pips", "hand_trail_pips"):
+        d[k] = _num(raw.get(k), d[k], 0, 5000)
     d["groups"] = clean_groups(raw.get("groups"))
     return d
+
+
+def clean_partials(raw) -> str:
+    """'40, 30, 30' → '40,30,30': whole percents for TP1, TP2... adding up to 100 (the last one takes the rest)."""
+    nums = [int(x) for x in re.findall(r"\d+", str(raw or ""))][:5]
+    nums = [n for n in nums if n > 0]
+    out, left = [], 100
+    for n in nums:
+        n = min(n, left)
+        if n <= 0:
+            break
+        out.append(n)
+        left -= n
+    if out and left:
+        out[-1] += left
+    return ",".join(str(n) for n in out)
 
 
 GROUP_KEYS = ("lot_mode", "fixed_lot", "risk_percent", "risk_amount", "layers", "tp_target")
@@ -191,6 +234,9 @@ def clean_groups(raw) -> dict:
         c = {}
         if g.get("paused"):
             c["paused"] = True
+        exp = _num(g.get("entry_expiry_min"), 0, 0, 7 * 24 * 60, int)
+        if exp:
+            c["entry_expiry_min"] = exp      # this group's unfilled entries live this long (0 = account setting)
         if g.get("optimised") is False or g.get("optimised") == "off":
             c["optimised"] = False          # optimised copying is on unless the customer turns it off
         if g.get("own"):
@@ -226,10 +272,15 @@ def effective_settings(settings: dict, plan_features: dict) -> dict:
         for k in ("directions", "max_sl_pips", "max_spread_pips", "max_open_signals",
                   "session_start", "session_end"):
             d[k] = base[k]
+    if not f("daily_limits"):
+        d.update(max_total_loss=0.0, max_total_loss_pct=0.0, limit_buffer_pct=100.0, check_worst_case=False)
+    if not f("signal_filters"):
+        d["no_hedging"] = "off"
     if not f("smart_entry"):
         d["smart_entry"] = False
     if not f("tp_control"):
         d["tp_target"] = "spread"
+        d["runner_pct"] = 0.0
     for g in d["groups"].values():          # a group's own settings stay inside the plan too
         if "layers" in g:
             g["layers"] = max(1, min(g["layers"], int(f("max_layers") or 1)))
@@ -249,15 +300,17 @@ def locked_keys(plan_features: dict) -> set[str]:
     if not f("breakeven"):
         locked |= {"breakeven_at_tp1", "be_offset_pips"}
     if not f("daily_limits"):
-        locked |= {"daily_loss_limit", "daily_loss_pct", "daily_profit_limit", "daily_profit_pct", "close_on_limit"}
+        locked |= {"daily_loss_limit", "daily_loss_pct", "daily_profit_limit", "daily_profit_pct", "close_on_limit",
+                   "max_total_loss", "max_total_loss_pct", "start_balance", "limit_buffer_pct", "check_worst_case"}
     if not f("news_protection"):
         locked |= {"news_protection", "news_before_min", "news_after_min", "news_close_trades", "news_currencies"}
     if not f("signal_filters"):
-        locked |= {"directions", "max_sl_pips", "max_spread_pips", "max_open_signals", "session_start", "session_end"}
+        locked |= {"directions", "max_sl_pips", "max_spread_pips", "max_open_signals", "session_start", "session_end",
+                   "no_hedging"}
     if not f("smart_entry"):
         locked |= {"smart_entry", "smart_distance_pips"}
     if not f("tp_control"):
-        locked |= {"tp_target"}
+        locked |= {"tp_target", "tp_partials", "runner_pct", "runner_trail_pips"}
     if int(f("max_layers") or 1) <= 1:
         locked |= {"layers"}
     return locked

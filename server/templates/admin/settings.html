@@ -1,7 +1,7 @@
 {% extends "admin/base.html" %}
 {% block title %}Settings{% endblock %}
 {% block content %}
-<div class="pagehead"><div><span class="eyebrow">// settings</span><h1>Settings</h1></div></div>
+<div class="pagehead"><div><span class="eyebrow">settings</span><h1>Settings</h1></div></div>
 <form method="post" action="/admin/settings" class="grid g2">
   {{ m.csrf_field(csrf) }}
   <section class="panel">

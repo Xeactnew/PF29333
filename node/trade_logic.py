@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import re
 
 PIP = 0.1  # gold: 1 pip = 0.10
 
@@ -123,6 +124,8 @@ def daily_block(settings: dict, start_balance: float, day_pnl: float) -> str | N
                             start_balance * float(settings.get("daily_loss_pct") or 0) / 100) if v > 0]
     prof_lim = [v for v in (float(settings.get("daily_profit_limit") or 0),
                             start_balance * float(settings.get("daily_profit_pct") or 0) / 100) if v > 0]
+    buf = float(settings.get("limit_buffer_pct") or 100) / 100
+    loss_lim = [v * buf for v in loss_lim]
     if loss_lim and day_pnl <= -min(loss_lim):
         return f"daily loss limit reached ({day_pnl:.2f})"
     if prof_lim and day_pnl >= min(prof_lim):
@@ -174,3 +177,66 @@ def enable_algo_trading(folder) -> bool:
         return False
     ini.write_bytes(new)
     return True
+
+
+def loss_limits(settings: dict, start_balance: float, base_balance: float) -> tuple[float | None, float | None]:
+    """(daily loss allowed, overall loss allowed) in money, after the buffer; None = no limit."""
+    buf = float(settings.get("limit_buffer_pct") or 100) / 100
+    day = [v for v in (float(settings.get("daily_loss_limit") or 0),
+                       start_balance * float(settings.get("daily_loss_pct") or 0) / 100) if v > 0]
+    tot = [v for v in (float(settings.get("max_total_loss") or 0),
+                       base_balance * float(settings.get("max_total_loss_pct") or 0) / 100) if v > 0]
+    return (min(day) * buf if day else None), (min(tot) * buf if tot else None)
+
+
+def total_block(settings: dict, base_balance: float, equity: float) -> str | None:
+    """The overall loss limit (from the starting balance, like a prop firm's maximum loss)."""
+    if base_balance <= 0:
+        return None
+    _, tot = loss_limits(settings, 0, base_balance)
+    if tot and equity <= base_balance - tot:
+        return f"overall loss limit reached (equity {equity:.2f}, limit {base_balance - tot:.2f})"
+    return None
+
+
+def partial_plan(partials: str, n_tps: int, runner_pct: float) -> list[float]:
+    """Fractions of each trade to close at TP1, TP2... ('40,30,30', 3 TPs, runner 20 → .32, .24, .24).
+    Fewer TPs than numbers: the last TP takes the rest. With a runner, that share stays open."""
+    nums = [int(x) for x in re.findall(r"\d+", partials or "")] or [100]
+    k = max(1, min(n_tps, len(nums)))
+    nums = nums[:k - 1] + [sum(nums[k - 1:])]
+    total = sum(nums) or 100
+    keep = 1 - min(max(runner_pct, 0), 90) / 100
+    return [n / total * keep for n in nums]
+
+
+def hand_stop(side: str, entry: float, bid: float, ask: float, sl: float, settings: dict,
+              best: float | None = None) -> float | None:
+    """The stop a hand-opened gold trade should have now (None = leave it): a stop if it has none, entry
+    (+ lock) once far enough in profit, then a trailing stop."""
+    px = bid if side == "buy" else ask
+    sgn = 1 if side == "buy" else -1
+    want = None
+    if not sl and float(settings.get("hand_sl_pips") or 0) > 0:
+        want = entry - sgn * float(settings["hand_sl_pips"]) * PIP
+    gain = (px - entry) * sgn / PIP
+    be = float(settings.get("hand_be_pips") or 0)
+    if be and gain >= be:
+        lock = float(settings.get("be_offset_pips") or 0) * PIP
+        cand = entry + sgn * lock
+        if want is None or (cand - want) * sgn > 0:
+            want = cand
+    trail = float(settings.get("hand_trail_pips") or 0)
+    ref = best if best is not None else px
+    if trail and (ref - entry) * sgn / PIP >= trail:
+        cand = ref - sgn * trail * PIP
+        if want is None or (cand - want) * sgn > 0:
+            want = cand
+    if want is None:
+        return None
+    want = round(want, 2)
+    if (sgn > 0 and want >= bid) or (sgn < 0 and want <= ask):
+        return None                                   # would be on the wrong side of the price
+    if sl and (want - sl) * sgn <= 1e-9:
+        return None                                   # not better than the stop it has
+    return want

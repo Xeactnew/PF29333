@@ -1,7 +1,7 @@
 {% extends "admin/base.html" %}
 {% block title %}Support #{{ t.id }}{% endblock %}
 {% block content %}
-<div class="pagehead"><div><span class="eyebrow">// support #{{ t.id }}</span><h1>{{ t.subject }}</h1>
+<div class="pagehead"><div><span class="eyebrow">support #{{ t.id }}</span><h1>{{ t.subject }}</h1>
   <p>{% if t.user %}<a href="/admin/users/{{ t.user.id }}">{{ t.user.username }}</a> ({{ t.user.plan.name }}){% else %}{{ t.name }}, not logged in{% endif %} · {{ t.email or "no email" }} · <a href="/admin/support">all tickets</a></p></div>
   <form method="post" action="/admin/support/{{ t.id }}">{{ m.csrf_field(csrf) }}
     {% if t.status != "closed" %}<button class="btn small" name="action" value="close">Close</button>{% else %}<button class="btn small" name="action" value="reopen">Reopen</button>{% endif %}</form></div>

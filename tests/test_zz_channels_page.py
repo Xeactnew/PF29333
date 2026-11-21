@@ -49,7 +49,7 @@ def test_slow_telegram_never_hangs_the_page(pro, monkeypatch):
     r = b.get("/channels")
     assert time.time() - t0 < 6 and r.status_code == 200
     assert "Fetching your Telegram chats" in r.text
-    assert "Bullion Calls" in r.text and "Calls this week" in r.text        # channels show from the database
+    assert "Bullion Calls" in r.text and "Signals this week" in r.text        # channels show from the database
 
 
 def test_unreachable_telegram_shows_a_clear_state(pro, monkeypatch):
@@ -70,7 +70,7 @@ def test_cached_chats_cards_steps_and_copying(pro):
     page = r.text
     assert "Gold Signals Pro" in page and "Copy</button>" in page
     assert page.count('class="gcard') == 2                                    # VIP group + own channel
-    assert "Not copied" in page and "Last call" in page and "Sell" in page
+    assert "Not copied" in page and "Last signal" in page and "Sell" in page
     assert 'class="steps"' in page and "Link your Telegram" in page and 'class="savebar"' in page
     # tick the own channel for the account, untick the VIP group
     b.post("/channels/copying", {f"c{sid}": str(aid)})

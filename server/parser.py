@@ -262,7 +262,11 @@ def parse_update(text: str) -> list[tuple[str, float | None]]:
     if re.search(r"\b(?:sl|s/l|stop\s*loss)\s*(?:was\s*|got\s*|has\s*been\s*)?(?:hit|taken|triggered|miss)|\bstopped\s*out\b|\bhit\s*(?:our\s*)?(?:sl|stop)\b", t) and not any(k == "tp_hit" for k, _ in out):
         out.append(("sl_hit", None))
 
-    if re.search(r"\bclose\s*(?:half|50\s*%|partial\w*|some)|\bpartials?\b|\bsecure\s*(?:some|partial|half)", t):
+    worst = re.search(r"\b(?:close|cut|exit|remove)\s*(?:the\s*|your\s*|our\s*|all\s*)?(?:worst|worse|first|1st|bad|losing)"
+                      r"\s*(?:entr(?:y|ies)|layers?|positions?|trades?|ones?|orders?)\b", t)
+    if worst:
+        out.append(("close_worst", None))
+    elif re.search(r"\bclose\s*(?:half|50\s*%|partial\w*|some)|\bpartials?\b|\bsecure\s*(?:some|partial|half)", t):
         out.append(("close_partial", 0.5))
     elif re.search(r"\b(?:close|exit)\s*(?:all|now|it|the\s*trade|trades|everything|full\w*|early|position\w*|at\s*market)\b|\bclose\s*(?:and|&)\s*secure|\bsecure\s*(?:all|profits?\s*now)", t):
         out.append(("close", None))

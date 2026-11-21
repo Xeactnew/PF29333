@@ -88,6 +88,8 @@ def create_signal(s, source: Source, p: ParsedSignal, raw: str = "", tg_msg_id: 
     rule = group_rule(s, sig)
     if rule:
         payload["signal"]["rule"] = {k: rule[k] for k in ("tp_target", "wait_for_zone") if k in rule}
+        if rule.get("entry_hours"):
+            payload["signal"]["entry_expiry_min"] = int(float(rule["entry_hours"]) * 60)
     if target_account_ids:
         for aid in target_account_ids:
             s.add(Event(kind="signal", account_id=aid, signal_id=sig.id, payload=payload))
@@ -98,7 +100,7 @@ def create_signal(s, source: Source, p: ParsedSignal, raw: str = "", tg_msg_id: 
 
 def add_update(s, sig: Signal, kind: str, value: float | None = None, raw: str = "",
                created_by: str = "telegram", tps: list[float] | None = None,
-               zone: tuple[float, float] | None = None) -> SignalUpdate:
+               zone: tuple[float, float] | None = None, zone_moved: bool = False) -> SignalUpdate:
     upd = SignalUpdate(signal_id=sig.id, kind=kind, value=value, raw_text=raw[:2000], created_by=created_by)
     s.add(upd)
     if kind == "levels":            # the group posted (or edited in) the stop loss / targets
@@ -106,7 +108,7 @@ def add_update(s, sig: Signal, kind: str, value: float | None = None, raw: str =
             sig.sl = value
         if tps:
             sig.tps = list(tps)
-        if zone and zone[0] and not sig.entry_low:    # a quick call's zone, posted right after it
+        if zone and zone[0] and (zone_moved or not sig.entry_low):  # a quick call's zone, or an edited zone
             sig.entry_low, sig.entry_high = zone
     if kind == "tp_hit" and value:
         sig.tp_reached = max(sig.tp_reached, int(value) if value < 99 else len(sig.tps or []) or 3)
@@ -124,8 +126,10 @@ def add_update(s, sig: Signal, kind: str, value: float | None = None, raw: str =
         payload["update"]["tps"] = list(tps)
     if zone and zone[0]:
         payload["update"]["zone"] = [float(zone[0]), float(zone[1])]
+        if zone_moved:
+            payload["update"]["zone_moved"] = True
     rule = group_rule(s, sig)
-    if rule and kind in ("breakeven", "sl_move"):
+    if rule and kind in ("breakeven", "sl_move", "close_worst"):
         payload["update"]["be_lock_pips"] = rule.get("be_lock_pips", 0)
         payload["update"]["sl_move_as_be"] = bool(rule.get("sl_move_as_be"))
     if sig.target_account_ids:
@@ -563,11 +567,11 @@ def optimisation(s, key: str) -> list[str]:
     out = []
     tp = r.get("tp_target")
     if tp in ("tp1", "tp2"):
-        out.append(f"Every layer takes profit at {tp.upper()}")
+        out.append(f"Takes profit at {tp.upper()}")
     elif tp == "spread":
         out.append("Takes profit across the group's targets")
     if r.get("wait_for_zone"):
-        out.append('Quick "BUY / SELL now" calls wait for the zone the group posts next')
+        out.append('A quick "BUY / SELL now" waits for the price range the group posts next, then enters')
     return out
 
 

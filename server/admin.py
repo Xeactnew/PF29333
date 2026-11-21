@@ -859,7 +859,13 @@ async def telegram_rules(request: Request, s=Depends(db_session)):
         as_be = form.get(f"asbe_{chat}") == "on"
         tp = form.get(f"tp_{chat}") if form.get(f"tp_{chat}") in ("tp1", "tp2", "spread") else ""
         wait = form.get(f"wait_{chat}") == "on"
+        try:
+            hours = max(0.0, min(168.0, float(form.get(f"entry_{chat}") or 0)))
+        except ValueError:
+            hours = 0.0
         r = {}
+        if hours:
+            r["entry_hours"] = hours
         if lock or as_be:
             r.update(be_lock_pips=lock, sl_move_as_be=as_be)
         if tp:

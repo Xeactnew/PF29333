@@ -268,6 +268,7 @@ def dashboard(request: Request, s=Depends(db_session)):
     recent = list(s.scalars(select(Deal).where(Deal.account_id.in_(ids or [-1]),
                                                Deal.entry.in_(("out", "inout"))).order_by(Deal.time.desc()).limit(12)))
     acc_names = {a.id: a.label or a.broker or a.login for a in accounts}
+    sig_names = _signal_names(s, recent)
     src_ids = {sid for a in accounts for sid in services.account_source_ids(s, a.id)}
     signals = list(s.scalars(select(Signal).where(or_(Signal.source_id.in_(src_ids or [-1]),
                                                       Signal.created_by == f"user:{user.id}"))
@@ -298,13 +299,20 @@ def dashboard(request: Request, s=Depends(db_session)):
         "waiting_entries": sum(len((a.live_state or {}).get("pendings") or []) + len((a.live_state or {}).get("waiting") or [])
                                for a in accounts),
         "user": user, "accounts": accounts, "stats": services.stats(s, ids),
-        "daily": services.daily_pnl(s, ids, 30), "recent": recent, "acc_names": acc_names,
+        "daily": services.daily_pnl(s, ids, 30), "recent": recent, "acc_names": acc_names, "sig_names": sig_names,
         "signals": signals, "open_positions": open_positions, "floating": floating,
         "currency": accounts[0].currency if accounts else "",
         "balance": sum(a.balance for a in accounts), "equity": sum(a.equity for a in accounts)})
 
 
 # ------------------------------------------------------------ MT5 accounts
+
+def _signal_names(s, deals) -> dict:
+    """Which group each closed trade came from (for the trade lists)."""
+    ids = {d.signal_id for d in deals if d.signal_id}
+    return {x.id: x.channel or (x.source.title if x.source else "") for x in
+            s.scalars(select(Signal).where(Signal.id.in_(ids or {-1})))}
+
 
 def _get_account(s, user: User, account_id: int) -> Account:
     acc = s.get(Account, account_id)
@@ -341,7 +349,7 @@ async def accounts_add(request: Request, s=Depends(db_session)):
     password = str(form.get("password", ""))
     label = str(form.get("label", "")).strip()[:64]
     if not login or not server or not password:
-        flash(request, "Fill in the MT5 login number, password and server.", "err")
+        flash(request, "Fill in your MT5 login number and password, and pick your broker and server.", "err")
         return redirect("/accounts")
     if s.scalar(select(Account).where(Account.login == login, Account.server == server,
                                       Account.removed.is_(False))):
@@ -395,6 +403,7 @@ def account_page(account_id: int, request: Request, s=Depends(db_session)):
         "effective": effective_settings(acc.settings, feats), "locked": locked_keys(feats),
         "max_layers": int(feature(feats, "max_layers") or 1), "stats": services.stats(s, [acc.id]),
         "curve": services.equity_curve(s, acc.id), "deals": deals, "sources": sources,
+        "sig_names": _signal_names(s, deals),
         "followed": set(services.account_source_ids(s, acc.id)), "queue_pos": queue_pos,
         "live": acc.live_state or {}})
 
@@ -460,6 +469,7 @@ async def account_group(account_id: int, key: str, request: Request, s=Depends(d
     else:
         groups[key] = {"paused": form.get("trading") != "on", "own": form.get("own") == "on",
                        "optimised": (groups.get(key) or {}).get("optimised", True),
+                       "entry_expiry_min": form.get("entry_expiry_min"),
                        **{k: form.get(k) for k in ("lot_mode", "fixed_lot", "risk_percent", "risk_amount",
                                                    "layers", "tp_target")}}
     settings["groups"] = groups
@@ -541,6 +551,20 @@ async def account_settings(account_id: int, request: Request, s=Depends(db_sessi
     return redirect(f"/accounts/{acc.id}")
 
 
+@router.post("/accounts/{account_id}/settings/recommended")
+async def account_settings_recommended(account_id: int, request: Request, s=Depends(db_session)):
+    """Every trade setting back to our defaults; the groups, symbol and nickname stay."""
+    user = current_user(request, s)
+    acc = _get_account(s, user, account_id)
+    await form_data(request)
+    old = clean_settings(acc.settings)
+    acc.settings = clean_settings({**DEFAULT_ACCOUNT_SETTINGS, "symbol": old["symbol"], "groups": old["groups"]})
+    services.log(s, "settings_recommended", user.id, f"account {acc.login}", user.username, client_ip(request))
+    s.commit()
+    flash(request, "Done: this account is back on our recommended settings.")
+    return redirect(f"/accounts/{acc.id}#settings")
+
+
 @router.post("/accounts/{account_id}/toggle")
 async def account_toggle(account_id: int, request: Request, s=Depends(db_session)):
     user = current_user(request, s)
@@ -555,7 +579,7 @@ async def account_toggle(account_id: int, request: Request, s=Depends(db_session
     acc.copy_enabled = not acc.copy_enabled
     services.log(s, "copy_" + ("on" if acc.copy_enabled else "off"), user.id, acc.login, user.username)
     s.commit()
-    flash(request, "Copying is on." if acc.copy_enabled else "Copying paused. Open trades are still managed.")
+    flash(request, "Copying is on." if acc.copy_enabled else "Copying paused: no new trades. Trades already open are still looked after.")
     return redirect(f"/accounts/{acc.id}")
 
 
@@ -567,7 +591,7 @@ async def account_close_all(account_id: int, request: Request, s=Depends(db_sess
     services.command(s, acc.id, "close_all")
     services.log(s, "close_all", user.id, acc.login, user.username, client_ip(request))
     s.commit()
-    flash(request, "Closing all PipsFarmer trades and pending orders on this account.")
+    flash(request, "Closing all PipsFarmer trades on this account and cancelling orders that haven't filled.")
     return redirect(f"/accounts/{acc.id}")
 
 
@@ -716,14 +740,15 @@ def signals_page(request: Request, s=Depends(db_session), g: str = ""):
     for x in signals:
         r = result.get(x.id)
         if r and r["open"]:
-            mine_txt, mine_cls = f"Live on your account · {signed(r['pnl'], cur)}", "live"
+            mine_txt, mine_cls = f"Open on your account now · {signed(r['pnl'], cur)}", "live"
         elif r:
-            mine_txt, mine_cls = (f"Taken · {r['lots']:g} lots · {signed(r['pnl'], cur)}",
+            lots = f"{r['lots']:g} lots · " if r.get("lots") else ""
+            mine_txt, mine_cls = (f"{'Won' if r['pnl'] > 0 else 'Lost' if r['pnl'] < 0 else 'Closed'} · {lots}{signed(r['pnl'], cur)}",
                                   "up" if r["pnl"] > 0 else "down" if r["pnl"] < 0 else "")
         elif x.id in skipped:
             mine_txt, mine_cls = "Skipped: " + skipped[x.id], "skip"
         else:
-            mine_txt, mine_cls = "Not taken on your accounts", "skip"
+            mine_txt, mine_cls = "Not copied to your accounts", "skip"
         if r and r["open"]:
             state = "Live"
         elif x.status == "open" and r and r["closed"]:
@@ -749,7 +774,7 @@ async def signals_manual(request: Request, s=Depends(db_session)):
     user = current_user(request, s)
     form = await form_data(request)
     if not feature(user.plan.features, "manual_signals"):
-        flash(request, "Manual signals aren't in your plan.", "err")
+        flash(request, "Posting your own signals isn't in your plan.", "err")
         return redirect("/signals")
     p = _parse_manual(form)
     if isinstance(p, str):
@@ -778,7 +803,7 @@ async def signals_update(signal_id: int, request: Request, s=Depends(db_session)
     if not sig or sig.created_by != f"user:{user.id}":
         raise HTTPException(404)
     kind = form.get("kind")
-    if kind not in ("breakeven", "close", "close_partial", "cancel", "sl_move"):
+    if kind not in ("breakeven", "close", "close_partial", "close_worst", "cancel", "sl_move"):
         raise HTTPException(400)
     value = None
     if kind == "close_partial":
@@ -863,7 +888,7 @@ async def channels_copying(request: Request, s=Depends(db_session)):
         services.set_account_sources(s, acc, list(keep))
     services.log(s, "channel_accounts_saved", user.id, "", user.username)
     s.commit()
-    flash(request, "Saved. The next call from each channel goes to the accounts you ticked.")
+    flash(request, "Saved. The next signal from each channel goes to the accounts you ticked.")
     return redirect("/channels#copying")
 
 

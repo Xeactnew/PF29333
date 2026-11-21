@@ -7,6 +7,13 @@
     sel.addEventListener("change", sync); sync();
   });
 
+  // Sign-up: payment choices only for paid plans
+  document.querySelectorAll("select[data-plan-select]").forEach((sel) => {
+    const free = (sel.dataset.free || "").split(",");
+    const sync = () => sel.closest("form").querySelectorAll("[data-paid-only]").forEach((el) => { el.hidden = free.includes(sel.value); });
+    sel.addEventListener("change", sync); sync();
+  });
+
   // Broker → server dropdowns; "isn't listed" opens a box to type the server
   document.querySelectorAll("[data-srvpick]").forEach((box) => {
     const data = JSON.parse(box.querySelector("[data-srv-data]").textContent || "{}");
@@ -79,9 +86,10 @@
     svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
     svg.setAttribute("preserveAspectRatio", "none");
     if (data.length < 2) {
-      const t = el("text", { x: W / 2, y: H / 2, "text-anchor": "middle", fill: "#8b92ad", "font-size": 14 });
-      t.textContent = "The chart fills in once the account has been online for a while.";
-      svg.appendChild(t); return;
+      const msg = document.createElement("p");
+      msg.className = "muted chart-empty";
+      msg.textContent = "The chart fills in once the account has been online for a while.";
+      svg.replaceWith(msg); return;
     }
     const vals = data.flatMap((d) => [d[1], d[2]]);
     const lo = Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1;

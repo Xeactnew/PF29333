@@ -11,9 +11,9 @@
 
   <section class="hero">
     <div>
-      <span class="eyebrow">// automated gold copy-trading</span>
+      <span class="eyebrow">Automatic gold copy-trading</span>
       <h1>Gold signals, <em>executed on your MT5</em> while you're busy.</h1>
-      <p>{{ site }} copies the VIP group's gold trades straight onto your account, moves your stop to breakeven at TP1, and stops for the day when you hit your loss or profit limit.</p>
+      <p>When the VIP group posts a gold trade, {{ site }} places it on your MT5 account for you. It protects the trade once it's in profit and stops for the day if you hit your loss limit. You don't need to keep your computer on.</p>
       <div class="actions">
         {% if allow_signup %}<a class="btn primary" href="/signup">Create a free account</a>{% endif %}
         <a class="btn" href="#plans">Compare plans</a>
@@ -21,11 +21,20 @@
     </div>
     <div class="ticket" aria-label="Example signal">
       <div class="row"><b class="side buy">Buy gold</b><b>4037 – 4030</b></div>
-      <div class="row"><span>Placed on your account</span><b>3 layers, 1% risk</b></div>
+      <div class="row"><span>Placed on your account</span><b>3 orders, 1% risk</b></div>
       <div class="row"><span>TP1 4047</span><b class="hit">Hit, stop moved to entry</b></div>
       <div class="row"><span>TP2 4057</span><b class="hit">Hit</b></div>
       <div class="row"><span>TP3 4067</span><b>Running</b></div>
     </div>
+  </section>
+
+  <section class="how" aria-label="How it works">
+    <h2>How it works</h2>
+    <ol class="how-steps">
+      <li><b>Sign up free</b><span>Pick a username and password. No card needed.</span></li>
+      <li><b>Add your MT5 account</b><span>Choose your broker and server from the list, then type your login number and password.</span></li>
+      <li><b>That's it</b><span>New gold signals are copied onto your account by themselves. Watch them on your phone.</span></li>
+    </ol>
   </section>
 
   <section id="plans">

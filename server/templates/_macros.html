@@ -37,7 +37,7 @@
       {% for tp in sig.tps %}<span>TP{{ loop.index }}</span>{{ tp|price }}{% endfor %}
     </div>
     <div class="meta">{{ sig.channel or sig.source.title }}
-      {% for u in updates %}, {{ {"tp_hit": ("all TPs hit" if (u.value or 0) >= 99 else "TP" ~ (u.value|int) ~ " hit"), "breakeven": "breakeven", "close": "closed", "close_partial": "half closed", "sl_hit": "SL hit", "sl_move": "SL moved to " ~ (u.value|price), "cancel": "cancelled", "levels": ("SL set to " ~ (u.value|price)) if u.value else "TPs set"}.get(u.kind, u.kind) }}{% endfor %}
+      {% for u in updates %}, {{ {"tp_hit": ("all TPs hit" if (u.value or 0) >= 99 else "TP" ~ (u.value|int) ~ " hit"), "breakeven": "breakeven", "close": "closed", "close_partial": "half closed", "sl_hit": "SL hit", "sl_move": "SL moved to " ~ (u.value|price), "cancel": "cancelled", "close_worst": "worst entry closed", "levels": ("SL set to " ~ (u.value|price)) if u.value else "levels set"}.get(u.kind, u.kind) }}{% endfor %}
     </div>
     {% if extra %}<div class="meta">{{ extra }}</div>{% endif %}
     {% if sig.tps %}<div class="ladder" aria-hidden="true">{% for tp in sig.tps %}<i class="{{ 'hit' if loop.index <= reached }}"></i>{% endfor %}</div>{% endif %}

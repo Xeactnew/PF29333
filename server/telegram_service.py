@@ -185,9 +185,14 @@ def _apply_new_levels(s, sig: Signal, p, text: str, by: str, label: str) -> str:
     old_tps = list(sig.tps or [])
     # targets change only when the edit lists at least as many (a shortened edit keeps the rest)
     new_tps = p.tps if p.tps and list(p.tps) != old_tps and len(p.tps) >= len(old_tps) else None
-    if not (new_sl or new_tps):
+    # a moved entry zone (within $30 of the old one, so a typo can't send entries miles away)
+    zone = None
+    if p.entry_low and sig.entry_low and (round(p.entry_low, 2), round(p.entry_high, 2)) != \
+            (round(sig.entry_low, 2), round(sig.entry_high, 2)) and abs(p.entry_low - sig.entry_low) <= 30:
+        zone = (p.entry_low, p.entry_high)
+    if not (new_sl or new_tps or zone):
         return "edit_ignored"
-    services.add_update(s, sig, "levels", new_sl, text, by, tps=new_tps)
+    services.add_update(s, sig, "levels", new_sl, text, by, tps=new_tps, zone=zone, zone_moved=bool(zone))
     s.commit()
     return label
 

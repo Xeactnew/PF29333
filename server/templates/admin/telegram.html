@@ -1,7 +1,7 @@
 {% extends "admin/base.html" %}
 {% block title %}Telegram{% endblock %}
 {% block content %}
-<div class="pagehead"><div><span class="eyebrow">// connections</span><h1>Telegram</h1>
+<div class="pagehead"><div><span class="eyebrow">connections</span><h1>Telegram</h1>
   <p>Everything Telegram is set up here. Changes apply straight away, no restart.</p></div></div>
 
 {% if link %}
@@ -81,6 +81,7 @@
           {% for v, l in [("", "each account's setting"), ("tp1", "everything at TP1"), ("tp2", "everything at TP2"), ("spread", "spread across the TPs")] %}<option value="{{ v }}" {{ 'selected' if (r.tp_target or '') == v }}>{{ l }}</option>{% endfor %}
         </select></label>
       <label class="check"><input type="checkbox" name="wait_{{ chat }}" {{ 'checked' if r.wait_for_zone }}> <span>Quick "BUY/SELL NOW" calls wait for the zone the group posts next</span></label>
+      <label class="inline">Keep unfilled entries <input name="entry_{{ chat }}" type="number" step="0.5" min="0" max="168" value="{{ r.entry_hours|default(0) }}" style="width:80px"> hours <small class="muted">(0 = each account's setting; a customer's own group setting wins)</small></label>
     </div>
     {% endfor %}
     <button class="btn" type="submit">Save group rules</button>

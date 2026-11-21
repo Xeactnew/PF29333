@@ -123,6 +123,8 @@ class FakeMT5:
         if a == self.TRADE_ACTION_MODIFY:
             o = self.orders[r["order"]]
             o.sl, o.tp = r["sl"], r["tp"]
+            if r.get("price"):
+                o.price_open = r["price"]
             return ok()
         if a == self.TRADE_ACTION_REMOVE:
             self.orders.pop(r["order"], None)
@@ -140,6 +142,12 @@ class FakeMT5:
         a, b = int(start.timestamp()) // 60 * 60, int(end.timestamp())
         return [{"time": x, "open": 4040.0, "high": 4041.0, "low": 4039.0, "close": 4040.5,
                  "tick_volume": 10, "spread": 20} for x in range(a, b, 60)]
+
+    bars: list = []
+
+    def copy_rates_from_pos(self, symbol, timeframe, start, count):
+        """1-minute candles set by a test (newest last)."""
+        return list(self.bars)[-count:]
 
     def history_deals_get(self, a, b):
         return list(self.deals)

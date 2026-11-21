@@ -10,19 +10,19 @@
     <article class="gcard {{ 'is-ready' if g.ready else 'is-held' }}{{ ' in-trade' if g.in_trade }}" id="g-{{ g.key }}">
       <div class="gtop">
         <div><h3>{{ g.title }}</h3><small>{% if g.optimised %}<span class="gopt-badge">✦ Optimised</span> {% endif %}{{ g.source if g.source and g.source != g.title else "Telegram group" }}</small></div>
-        <span class="tag {{ 'trade' if g.in_trade else ('go' if g.ready else 'hold') }}">{{ "In a trade" if g.in_trade else ("Armed" if g.ready else ("Off" if g.paused else "On hold")) }}</span>
+        <span class="tag {{ 'trade' if g.in_trade else ('go' if g.ready else 'hold') }}">{{ "In a trade" if g.in_trade else ("Ready" if g.ready else ("Off" if g.paused else "On hold")) }}</span>
       </div>
-      <p class="gstate">{% if g.in_trade %}A trade from this group is open now.{% elif g.ready %}Copies this group's next call.{% else %}{{ blockers[0][2] or blockers[0][1] }}{% endif %}</p>
+      <p class="gstate">{% if g.in_trade %}A trade from this group is open now.{% elif g.ready %}Ready to copy this group's next signal.{% else %}{{ blockers[0][2] or blockers[0][1] }}{% endif %}</p>
       <ul class="gchecks">{% for done, what, why in g.checks %}<li class="{{ 'ok' if done else 'no' }}">{{ what }}</li>{% endfor %}</ul>
-      <p class="glast">{% if g.last %}Last call <b class="side {{ g.last.side }}">{{ g.last.side|capitalize }}</b> {% if g.last.entry_low %}{{ g.last.entry_low|price }}{% if g.last.entry_high != g.last.entry_low %}–{{ g.last.entry_high|price }}{% endif %}{% else %}at market{% endif %} · {{ g.last.created_at|ago }}{% else %}No calls yet{% endif %}</p>
+      <p class="glast">{% if g.last %}Last signal <b class="side {{ g.last.side }}">{{ g.last.side|capitalize }}</b> {% if g.last.entry_low %}{{ g.last.entry_low|price }}{% if g.last.entry_high != g.last.entry_low %}–{{ g.last.entry_high|price }}{% endif %}{% else %}at market{% endif %} · {{ g.last.created_at|ago }}{% else %}No signals yet{% endif %}</p>
       <dl class="gnums">
-        <div><dt>Calls</dt><dd class="num">{{ st.signals }}</dd></div>
+        <div><dt>Signals</dt><dd class="num">{{ st.signals }}</dd></div>
         <div><dt>Trades</dt><dd class="num">{{ st.trades }}</dd></div>
         <div><dt>Win %</dt><dd class="num">{{ st.win_rate if st.trades else "—" }}</dd></div>
         <div><dt>{{ "Today" if per == "today" else "7 days" }}</dt><dd>{{ m.pnl(st.pnl, cur) }}</dd></div>
       </dl>
       <div class="gfoot">
-        <a class="btn small" href="/signals?g={{ g.key }}">Its calls</a>
+        <a class="btn small" href="/signals?g={{ g.key }}">Its signals</a>
         {% for x in g.accounts %}<a class="btn small" href="/accounts/{{ x.acc.id }}#g-{{ g.key }}">Settings{% if g.accounts|length > 1 %} · {{ x.acc.label or x.acc.login }}{% endif %}</a>{% endfor %}
       </div>
     </article>
@@ -30,6 +30,6 @@
   </div>
   {% if groups|length > 1 %}<div class="deck-dots" data-deck-dots aria-hidden="true">{% for g in groups %}<i class="{{ 'on' if loop.first }}"></i>{% endfor %}</div>{% endif %}
   {% else %}
-  <p class="muted">No groups yet. Once a group your accounts follow posts a call, it shows up here.</p>
+  <p class="muted">No groups yet. Once a group your accounts follow posts a signal, it shows up here.</p>
   {% endif %}
 </section>

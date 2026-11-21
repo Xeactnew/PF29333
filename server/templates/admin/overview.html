@@ -1,7 +1,7 @@
 {% extends "admin/base.html" %}
 {% block title %}Overview{% endblock %}
 {% block content %}
-<div class="pagehead"><div><span class="eyebrow">// overview</span><h1>Overview</h1><p>{{ counts.users }} open customer accounts, {{ counts.active_today }} active in the last day.</p></div>
+<div class="pagehead"><div><span class="eyebrow">overview</span><h1>Overview</h1><p>{{ counts.users }} open customer accounts, {{ counts.active_today }} active in the last day.</p></div>
   <a class="btn primary" href="/admin/users#new">Create a login</a></div>
 
 {% if setup_left %}

@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import trade_logic as tl  # noqa: E402
 
 MAGIC = 770077
-VERSION = "1.3.30"
+VERSION = "1.3.31"
 RECONNECT_AFTER = 120           # seconds MT5 may be off the broker before we log in again ourselves
 SL_WAIT_MIN = 30                # how long a signal without a stop loss waits for the group to post one
 FIRST_START_TIMEOUT = 300_000   # a brand-new MT5 copy compiles its examples and updates itself first
@@ -480,6 +480,9 @@ class Worker:
                 self.note(f"signal #{sig['id']} skipped: you paused {sig.get('source') or 'this group'}")
             return
         over = {k: v for k, v in g.items() if k in self.GROUP_KEYS} if g.get("own") else {}
+        expiry = g.get("entry_expiry_min") or sig.get("entry_expiry_min")
+        if expiry:
+            over["entry_expiry_min"] = expiry   # this group's entries live longer / shorter (customer, else house rule)
         if rule.get("tp_target"):
             over["tp_target"] = rule["tp_target"]      # optimised copying sets the targets; own size still applies
         if not over:
@@ -508,6 +511,9 @@ class Worker:
             return self.note(f"signal #{sid} skipped: no gold symbol found")
         if s.get("directions", "both") not in ("both", side):
             return self.note(f"signal #{sid} skipped: {side}s are switched off")
+        hedge = self.hedging_check(sid, side)
+        if hedge:
+            return self.note(f"signal #{sid} skipped: {hedge}")
         t = self.tick()
         if not t:
             return self.note(f"signal #{sid} skipped: no price")
@@ -562,30 +568,114 @@ class Worker:
 
         n = int(s.get("layers", 1))
         levels = tl.layer_levels(side, lo, hi, n)
-        ltps = tl.layer_tps(tps, n, s.get("tp_target", "spread"))
-        info = self.sinfo()
-        account = self.mt5.account_info()
-        loss = []
-        for lv in levels:
-            # a layer that would fill at market right now fills at today's price, not the zone edge
-            lv = min(lv, t.ask) if side == "buy" else max(lv, t.bid)
-            p = self.mt5.order_calc_profit(self.mt5.ORDER_TYPE_BUY if side == "buy" else self.mt5.ORDER_TYPE_SELL,
-                                           self.symbol, 1.0, lv, sl)
-            loss.append(abs(p) if p is not None else abs(lv - sl) * info.trade_contract_size)
-        lot, why = tl.lot_per_layer(s, n, account.balance, loss, info.volume_step, info.volume_min, info.volume_max)
+        lot, why, loss = self.size_layers(side, levels, sl, n)
         if not lot:
             return self.note(f"signal #{sid} skipped: {why}")
+        if s.get("check_worst_case"):
+            worst = self.worst_case_block(sum(x * lot for x in loss))
+            if worst:
+                return self.note(f"signal #{sid} skipped: {worst}")
         rec = {"side": side, "order_type": sig.get("order_type", "market"), "sl": sl, "tps": tps, "temp_sl": temp_sl,
-               "orig_sl": sig.get("sl"),
-               "entry_low": lo, "entry_high": hi, "created": self.clock(), "tp1_done": False, "be_done": False,
+               "orig_sl": sig.get("sl"), "tp_target": s.get("tp_target", "spread"),
+               "entry_low": lo, "entry_high": hi, "created": self.clock(), "created_srv": int(t.time),
+               "tp1_done": False, "be_done": False,
                "expires": self.clock() + 60 * int(s.get("entry_expiry_min", 120)),
-               "layers": [{"i": i, "level": levels[i], "tp": ltps[i], "lot": lot, "state": "new", "ticket": None}
+               "layers": [{"i": i, "level": levels[i], "tp": 0.0, "lot": lot, "state": "new", "ticket": None}
                           for i in range(n)]}
+        if rec["tp_target"] == "partials":
+            rec["partials"] = {"plan": s.get("tp_partials", "40,30,30"), "runner": float(s.get("runner_pct") or 0),
+                               "trail": float(s.get("runner_trail_pips") or 0)}
+            rec["part_done"] = 0
+        for L, tp in zip(rec["layers"], self.layer_tps_for(rec)):
+            L["tp"] = tp
         self.state["signals"][sid] = rec
         self.note(f"signal #{sid} {side} {lo:g}-{hi:g}: {n} layer(s) x {lot} lots"
                   + (f", temporary stop {sl:g} until the group posts its stop loss" if temp_sl else ""))
         self.place_layers(sid, rec)
         self.save_state()
+
+    def size_layers(self, side: str, levels: list[float], sl: float, n: int) -> tuple[float, str, list[float]]:
+        """Lot per layer for these entries and stop, plus each layer's loss per 1.0 lot at the stop."""
+        s, t, info = self.settings, self.tick(), self.sinfo()
+        account = self.mt5.account_info()
+        loss = []
+        for lv in levels:
+            # a layer that would fill at market right now fills at today's price, not the zone edge
+            if t:
+                lv = min(lv, t.ask) if side == "buy" else max(lv, t.bid)
+            p = self.mt5.order_calc_profit(self.mt5.ORDER_TYPE_BUY if side == "buy" else self.mt5.ORDER_TYPE_SELL,
+                                           self.symbol, 1.0, lv, sl)
+            loss.append(abs(p) if p is not None else abs(lv - sl) * info.trade_contract_size)
+        lot, why = tl.lot_per_layer(s, n, account.balance, loss, info.volume_step, info.volume_min, info.volume_max)
+        return lot, why, loss
+
+    def layer_tps_for(self, rec: dict) -> list[float]:
+        """Each layer's take profit. Partials: every trade aims at the last TP the plan uses (none with a
+        runner); the worker closes the shares at the TPs before."""
+        tps, n = rec.get("tps") or [], len(rec["layers"])
+        P = rec.get("partials")
+        if P:
+            if not tps:
+                return [0.0] * n
+            k = len(tl.partial_plan(P["plan"], len(tps), P["runner"]))
+            return [0.0 if P["runner"] else tps[k - 1]] * n
+        return tl.layer_tps(tps, n, rec.get("tp_target") or self.settings.get("tp_target", "spread"))
+
+    def hedging_check(self, sid: str, side: str) -> str | None:
+        """No hedging (prop firms forbid it): an opposite call closes our open trades, or is skipped."""
+        mode = self.settings.get("no_hedging", "off")
+        if mode == "off":
+            return None
+        opp = "sell" if side == "buy" else "buy"
+        ours = [(o, r) for o, r in self.state["signals"].items() if not r.get("finished") and r["side"] == opp]
+        hand = [p for p in (self.mt5.positions_get() or []) if p.magic != MAGIC
+                and getattr(p, "symbol", "") == self.symbol and self.side_of(p) == opp]
+        if mode == "skip_new" and (ours or hand):
+            return f"you have {opp} trades open and hedging is off"
+        if hand:
+            return f"you have {opp} trades of your own open and hedging is off"
+        for osid, r in ours:
+            self.close_signal(osid, r, f"opposite call #{sid} came in (no hedging)")
+        if ours:
+            self.save_state()
+        return None
+
+    def open_risk(self) -> float:
+        """How far equity would fall if every open trade, pending order and waiting entry of ours hit its stop."""
+        mt5, drop = self.mt5, 0.0
+        for p in self.our_positions():
+            sl = p.sl or (p.price_open - (1 if p.type == mt5.POSITION_TYPE_BUY else -1)
+                          * float(self.settings.get("default_sl_pips", 50)) * tl.PIP)
+            at_sl = mt5.order_calc_profit(p.type, p.symbol, p.volume, p.price_open, sl)
+            drop += max(0.0, (p.profit or 0) - (at_sl or 0))
+        for o in self.our_orders():
+            typ = mt5.ORDER_TYPE_BUY if o.type in (2, 4) else mt5.ORDER_TYPE_SELL
+            at_sl = mt5.order_calc_profit(typ, self.symbol, o.volume_current, o.price_open, o.sl) if o.sl else None
+            drop += abs(at_sl or 0)
+        for rec in self.state["signals"].values():
+            if rec.get("finished"):
+                continue
+            for L in rec["layers"]:
+                if L["state"] in ("new", "wait"):
+                    typ = mt5.ORDER_TYPE_BUY if rec["side"] == "buy" else mt5.ORDER_TYPE_SELL
+                    drop += abs(mt5.order_calc_profit(typ, self.symbol, L["lot"], L["level"], rec["sl"]) or 0)
+        return drop
+
+    def worst_case_block(self, new_risk: float) -> str | None:
+        """Would the loss limits still hold if everything open and this new trade all hit their stops?"""
+        acc = self.mt5.account_info()
+        day = self.state.get("day") or {}
+        base = (self.state.get("total") or {}).get("base") or float(self.settings.get("start_balance") or 0)
+        day_lim, tot_lim = tl.loss_limits(self.settings, day.get("start_balance") or acc.balance, base)
+        risk = self.open_risk() + new_risk
+        if day_lim is not None:
+            day_pnl = acc.equity - (day.get("start_balance") or acc.balance)
+            if day_pnl - risk <= -day_lim:
+                return (f"if every open trade and this one hit their stops, today's loss would pass your daily "
+                        f"limit ({risk:.2f} at risk)")
+        if tot_lim is not None and base and acc.equity - risk <= base - tot_lim:
+            return f"if every open trade and this one hit their stops, you'd pass your overall loss limit ({risk:.2f} at risk)"
+        return None
 
     def place_layers(self, sid: str, rec: dict):
         """Act on layers in state new/wait."""
@@ -751,8 +841,7 @@ class Worker:
             rec["sl"], rec["temp_sl"] = float(sl), False
         if tps:
             rec["tps"] = [float(x) for x in tps]
-            ltps = tl.layer_tps(rec["tps"], len(rec["layers"]), self.settings.get("tp_target", "spread"))
-            for L, tp in zip(rec["layers"], ltps):
+            for L, tp in zip(rec["layers"], self.layer_tps_for(rec)):
                 L["tp"] = tp
         by_layer = {L["i"]: L for L in rec["layers"]}
 
@@ -791,7 +880,14 @@ class Worker:
         if not rec or rec.get("finished"):
             return
         if upd["kind"] == "levels":         # the signal's own stop and targets: always applied
-            self.apply_levels(sid, rec, upd.get("value"), upd.get("tps") or [])
+            if upd.get("value") or upd.get("tps"):
+                self.apply_levels(sid, rec, upd.get("value"), upd.get("tps") or [])
+            if upd.get("zone") and upd.get("zone_moved") and not rec.get("finished"):
+                if self.settings.get("move_entries_on_edit", True):
+                    self.move_entries(sid, rec, upd["zone"])
+                else:
+                    self.note(f"signal #{sid}: the group moved its entry to {upd['zone'][0]:g}-{upd['zone'][1]:g}, "
+                              "not applied because \"Move unfilled entries\" is off")
             return self.save_state()
         if not (self.settings.get("follow_updates", True) or upd.get("force")):
             what = {"breakeven": "move to breakeven", "sl_move": f"move the stop to {upd.get('value')}",
@@ -818,12 +914,176 @@ class Worker:
             self.close_signal(sid, rec, "group said close" if kind == "close" else "group's SL was hit")
         elif kind == "close_partial":
             self.close_signal(sid, rec, "group said take partials", float(value or 0.5))
+        elif kind == "close_worst":
+            if self.settings.get("close_worst_entry", True):
+                self.close_worst(sid, rec, upd.get("be_lock_pips"))
+            else:
+                self.note(f"signal #{sid}: the group said close the worst entry, not applied because "
+                          "\"Close the worst entry\" is off")
         elif kind == "cancel":
             self.cancel_entries(sid, rec, "group cancelled the signal")
             for L in rec["layers"]:
                 if L["state"] in ("new", "wait"):
                     L["state"] = "cancelled"
         self.save_state()
+
+    def close_worst(self, sid: str, rec: dict, lock_pips: float | None = None):
+        """"Close the worst / first entry": that trade is closed (or its stop goes to its entry if it's in
+        profit), the others go to breakeven and unfilled entries are cancelled."""
+        positions = self.our_positions(sid)
+        if not positions:
+            self.cancel_entries(sid, rec, "the group said close the worst entry")
+            return self.note(f"signal #{sid}: the group said close the worst entry, none had filled")
+        buy = rec["side"] == "buy"
+        worst = max(positions, key=lambda p: p.price_open) if buy else min(positions, key=lambda p: p.price_open)
+        t = self.tick()
+        in_profit = t and ((t.bid > worst.price_open + tl.PIP) if buy else (t.ask < worst.price_open - tl.PIP))
+        if in_profit and tl.better_sl(rec["side"], round(worst.price_open, 2), worst.sl):
+            self.modify_sl(worst, round(worst.price_open, 2))
+            what = f"stop on the worst entry ({worst.price_open:g}) moved to its entry: it's in profit"
+        else:
+            self.close_position(worst)
+            what = f"closed the worst entry ({worst.price_open:g})"
+        if len(positions) > 1:
+            self.move_to_breakeven(sid, rec, lock_pips)
+        self.cancel_entries(sid, rec, "the group closed the worst entry")
+        self.note(f"signal #{sid}: {what}" + (", the rest moved to breakeven" if len(positions) > 1 else ""))
+
+    def move_entries(self, sid: str, rec: dict, zone: list[float]):
+        """The group edited its entry zone: unfilled entries move with it (re-sized for risk-based lots)."""
+        lo, hi = sorted(float(x) for x in zone)
+        n = len(rec["layers"])
+        levels = tl.layer_levels(rec["side"], lo, hi, n)
+        rec["entry_low"], rec["entry_high"] = lo, hi
+        orders = {str(o.ticket): o for o in self.our_orders(sid)}
+        todo = [L for L in rec["layers"] if L["state"] in ("new", "wait")
+                or (L["state"] == "pending" and str(L["ticket"]) in orders)]
+        if not todo:
+            return self.note(f"signal #{sid}: the group moved its entry to {lo:g}-{hi:g}, every entry had already filled")
+        lot = None
+        if self.settings.get("lot_mode", "fixed") != "fixed":
+            lot, _, _ = self.size_layers(rec["side"], levels, rec["sl"], n)
+        for L in todo:
+            if L["state"] == "pending":
+                L["by_us"] = True
+                if not self.cancel_order(orders[str(L["ticket"])]):
+                    continue
+                L["state"], L["ticket"] = "wait", None
+            L["level"] = levels[L["i"]]
+            if lot:
+                L["lot"] = lot
+        self.place_layers(sid, rec)
+        self.note(f"signal #{sid}: the group moved its entry to {lo:g}-{hi:g}, {len(todo)} unfilled entr"
+                  f"{'y' if len(todo) == 1 else 'ies'} moved")
+
+    def bars_reached(self, rec: dict, level: float) -> bool:
+        """Did any whole 1-minute candle since the call reach this price? (Spikes between our checks count,
+        and accounts on the same broker agree.) Checked at most every 20 seconds per signal."""
+        now = self.clock()
+        if not rec.get("created_srv") or now - rec.get("bars_at", 0) < 20:
+            return False
+        rec["bars_at"] = now
+        t = self.tick()
+        if not t:
+            return False
+        minutes = int((t.time - rec["created_srv"]) // 60) + 2
+        if minutes < 2:
+            return False
+        try:
+            bars = self.mt5.copy_rates_from_pos(self.symbol, self.mt5.TIMEFRAME_M1, 0, min(minutes, 1440)) or []
+        except Exception:
+            return False
+        first = rec["created_srv"] // 60 * 60 + 60           # whole minutes after the call
+        buy = rec["side"] == "buy"
+        for b in bars:
+            if int(b["time"]) < first:
+                continue
+            if (buy and float(b["high"]) >= level) or (not buy and float(b["low"]) <= level):
+                return True
+        return False
+
+    def tp_hit(self, rec: dict, level: float, t) -> bool:
+        if tl.tp_reached(rec["side"], level, t.bid, t.ask):
+            return True
+        return bool(self.settings.get("tp1_from_bars")) and self.bars_reached(rec, level)
+
+    def manage_partials(self, sid: str, rec: dict, t) -> bool:
+        """Partials: close each trade's share at TP1, TP2...; with a runner, the last share stays open with
+        its stop at the TP before (then trailing). Returns True if anything changed."""
+        P, tps = rec["partials"], rec["tps"]
+        if not tps:
+            return False
+        plan = tl.partial_plan(P["plan"], len(tps), P["runner"])
+        positions = self.our_positions(sid)
+        orig = rec.setdefault("orig_vol", {})
+        for p in positions:
+            orig.setdefault(str(p.identifier), p.volume)
+        stage, changed = rec.get("part_done", 0), False
+        info = self.sinfo()
+        while stage < len(plan) and tl.tp_reached(rec["side"], tps[stage], t.bid, t.ask):
+            last = stage == len(plan) - 1
+            if not (last and not P["runner"]):             # the final share closes at its own TP in MT5
+                cum = sum(plan[:stage + 1])
+                for p in positions:
+                    keep_target = orig.get(str(p.identifier), p.volume) * (1 - cum)
+                    keep = tl.round_lot(keep_target, info.volume_step, info.volume_min, p.volume) if keep_target > 0 else 0
+                    if keep_target > 0 and not keep:
+                        keep = info.volume_min                # too small to split further: keep the minimum
+                    cut = round(p.volume - keep, 2)
+                    if cut >= info.volume_step - 1e-9:
+                        self.close_position(p, cut if cut < p.volume - 1e-9 else None)
+                self.note(f"signal #{sid}: TP{stage + 1} reached, closed {round(cum * 100)}% of each trade")
+            stage += 1
+            changed = True
+            if last and P["runner"]:
+                rec["runner_on"] = True
+                stop = tps[stage - 2] if stage >= 2 else None
+                for p in self.our_positions(sid):
+                    sl = stop if stop else round(p.price_open, 2)
+                    if tl.better_sl(rec["side"], sl, p.sl):
+                        self.modify_sl(p, sl)
+                self.note(f"signal #{sid}: runner left open ({P['runner']:g}%), stop at {stop or 'entry'}"
+                          + (f", trailing {P['trail']:g} pips" if P["trail"] else ""))
+        rec["part_done"] = stage
+        if rec.get("runner_on") and P["trail"]:
+            buy = rec["side"] == "buy"
+            px = t.bid if buy else t.ask
+            best = rec.get("best") or px
+            best = max(best, px) if buy else min(best, px)
+            if best != rec.get("best"):
+                rec["best"], changed = best, True
+            sl = round(best - P["trail"] * tl.PIP if buy else best + P["trail"] * tl.PIP, 2)
+            for p in self.our_positions(sid):
+                valid = sl < t.bid if buy else sl > t.ask
+                if valid and tl.better_sl(rec["side"], sl, p.sl):
+                    self.modify_sl(p, sl)
+        return changed
+
+    def manage_hand_trades(self):
+        """Gold trades opened by hand (not by us): a stop if they have none, breakeven, trailing (if switched on)."""
+        s = self.settings
+        if not (s.get("hand_sl_pips") or s.get("hand_be_pips") or s.get("hand_trail_pips")) or not self.symbol:
+            return
+        t = self.tick()
+        if not t:
+            return
+        best = self.state.setdefault("hand_best", {})
+        live = set()
+        for p in self.mt5.positions_get() or []:
+            if p.magic == MAGIC or getattr(p, "symbol", "") != self.symbol:
+                continue
+            k = str(p.ticket)
+            live.add(k)
+            side = self.side_of(p)
+            px = t.bid if side == "buy" else t.ask
+            b = best.get(k, px)
+            best[k] = max(b, px) if side == "buy" else min(b, px)
+            want = tl.hand_stop(side, p.price_open, t.bid, t.ask, p.sl, s, best[k])
+            if want is not None and self.modify_sltp(p, want, p.tp):
+                self.note(f"your own {side} trade at {p.price_open:g}: stop set to {want:g}")
+        for k in list(best):
+            if k not in live:
+                del best[k]
 
     def on_tp1(self, sid: str, rec: dict, why: str):
         rec["tp1_done"] = True
@@ -871,10 +1131,12 @@ class Worker:
                     and any(L["state"] in ("pending", "new", "wait") for L in rec["layers"]):
                 # the filled part came back to entry and closed: the trade is over, so are its other entries
                 self.cancel_entries(sid, rec, "the first entry closed at breakeven")
-            # TP1 by price
-            if not rec["tp1_done"] and rec["tps"] and tl.tp_reached(rec["side"], rec["tps"][0], t.bid, t.ask):
+            # TP1 by price (or by 1-minute candles, if switched on)
+            if not rec["tp1_done"] and rec["tps"] and self.tp_hit(rec, rec["tps"][0], t):
                 self.on_tp1(sid, rec, "price reached TP1")
                 changed = True
+            if rec.get("partials"):
+                changed |= self.manage_partials(sid, rec, t)
             elif rec["tp1_done"] and not rec["be_done"] and self.settings.get("breakeven_at_tp1", True) \
                     and self.our_positions(sid):
                 self.move_to_breakeven(sid, rec)
@@ -939,6 +1201,32 @@ class Worker:
                     day["closed"] = True
                     self.close_everything(hit)
                 self.save_state()
+        tot = self.state.setdefault("total", {})
+        if s.get("max_total_loss") or s.get("max_total_loss_pct"):
+            base = float(s.get("start_balance") or 0)
+            if not base:
+                if not tot.get("base"):
+                    tot["base"] = acc.balance            # the balance when the limit was switched on
+                    self.save_state()
+                base = tot["base"]
+            key = f"{base}|{s.get('max_total_loss')}|{s.get('max_total_loss_pct')}|{s.get('limit_buffer_pct')}"
+            if tot.get("key") != key:                    # the customer changed the limit: start fresh
+                tot.update(key=key, hit=None)
+            if s.get("start_balance"):
+                tot["base"] = base
+            hit = tot.get("hit") or tl.total_block(s, base, acc.equity)
+            if hit:
+                if not blocked:
+                    blocked = hit + ", no new trades until you change the limit"
+                if not tot.get("hit"):
+                    tot["hit"] = hit
+                    self.note(hit)
+                    if s.get("close_on_limit", True):
+                        self.close_everything(hit)
+                    self.save_state()
+        elif tot:
+            tot.clear()
+            self.save_state()
         if not blocked and s.get("news_protection"):
             text, ev = tl.news_state(self.news, self.clock(), int(s.get("news_before_min", 15)),
                                      int(s.get("news_after_min", 15)))
@@ -1091,6 +1379,7 @@ class Worker:
         if self.status == "online":
             self.check_protections()
             self.manage_signals()
+            self.manage_hand_trades()
         self.poll_server()
         if self.status == "online" and self.clock() - self.last_deals >= 60:
             self.sync_deals()

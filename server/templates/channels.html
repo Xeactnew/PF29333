@@ -12,10 +12,10 @@
     {% elif not live %}<span class="tag hold">Reconnecting</span>
     {% else %}<span class="tag go">Live</span>{% endif %}
   </div>
-  <p class="gstate">{% if not copied %}No account copies it yet. Tick one below.{% elif not live %}We're reconnecting to your Telegram; calls resume by themselves.{% else %}Copies its next gold call.{% endif %}</p>
-  <p class="glast">{% if c.last %}Last call <b class="side {{ c.last.side }}">{{ c.last.side|capitalize }}</b> {{ c.last.symbol }} · {{ c.last.created_at|ago }}{% else %}No calls yet{% endif %}</p>
+  <p class="gstate">{% if not copied %}No account copies it yet. Tick one below.{% elif not live %}We're reconnecting to your Telegram; signals start again by themselves.{% else %}Ready to copy its next gold signal.{% endif %}</p>
+  <p class="glast">{% if c.last %}Last signal <b class="side {{ c.last.side }}">{{ c.last.side|capitalize }}</b> {{ c.last.symbol }} · {{ c.last.created_at|ago }}{% else %}No signals yet{% endif %}</p>
   <dl class="gnums two">
-    <div><dt>Calls this week</dt><dd class="num">{{ c.week }}</dd></div>
+    <div><dt>Signals this week</dt><dd class="num">{{ c.week }}</dd></div>
     <div><dt>Accounts</dt><dd class="num">{{ c.accounts|length }}</dd></div>
   </dl>
   {% if accounts %}
@@ -34,7 +34,7 @@
 
 {% if max_channels %}
 <section class="panel">
-  <div class="panel-head"><h2>Get set up</h2><small>{{ mine|length }} of {{ max_channels if max_channels < 999 else "unlimited" }} channels</small></div>
+  <div class="panel-head"><h2>Get set up</h2><small>{% if max_channels < 999 %}{{ mine|length }} of {{ max_channels }} channels used{% else %}{{ mine|length }} channel{{ "s" if mine|length != 1 }} added, no limit{% endif %}</small></div>
   <ol class="steps">
     {% for label, href, done in steps %}<li class="{{ 'done' if done }}"><a href="{{ href }}">{{ label }}</a></li>{% endfor %}
   </ol>
@@ -58,7 +58,7 @@
 {% if not max_channels %}
 <section class="panel" style="margin-top:18px">
   <h2>Copy your own Telegram channels</h2>
-  <p class="muted">With Pro and Extreme you link your Telegram and pick the signal channels you're already in. {{ site }} reads their gold calls and updates and trades them on your accounts, next to {{ main.title }}.</p>
+  <p class="muted">With Pro and Extreme you link your Telegram and pick the signal channels you're already in. {{ site }} reads their gold signals and updates and trades them on your accounts, next to {{ main.title }}.</p>
   <a class="btn primary" href="/plan">See Pro and Extreme</a>
 </section>
 {% else %}

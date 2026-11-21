@@ -26,8 +26,19 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
   change inline (posts to /admin/users/<id>/plan with `next`). "Remove account" on an MT5 account page
   (`services.remove_account`); "Delete customer for good" on the customer page (type the username;
   `services.delete_user` deletes accounts + deals/snapshots/events, keeps tickets and activity unlinked).
+- Options taken from the owner's FundingPips copier (1.3.31), all per account in the settings form:
+  close_worst_entry (parser kind `close_worst`), move_entries_on_edit (edited zone → `zone_moved` update),
+  per-group `entry_expiry_min` (+ house rule `entry_hours`), max_total_loss/_pct + start_balance,
+  limit_buffer_pct (act at 90% etc.), check_worst_case (`Worker.open_risk`), tp1_from_bars
+  (`copy_rates_from_pos`), no_hedging (off/close_old/skip_new), tp_target "partials" + tp_partials +
+  runner_pct/runner_trail_pips (`manage_partials`), hand_sl/be/trail_pips (`manage_hand_trades`, gold only).
+  Plan gating: limits need `daily_limits`, hedging needs `signal_filters`, partials/runner need `tp_control`.
 - Add-account / login forms: Broker → Server dropdowns (`brokers.choices` + `_macros.server_picker`),
   "isn't listed" opens a typed box; without JavaScript only the typed box shows.
+- **Plain words for customers** (owner: "easy enough for a 10 year old"): say "signal" not "call", "Ready" not
+  "Armed", no "//" labels. Account settings show the main choices per section with the rest under
+  "More options", a "What do these words mean?" glossary and "Use recommended settings"
+  (`/accounts/<id>/settings/recommended`). Closed trades show the group they came from.
 - Keep the public face generic (no framework names, versions, comments or stack traces in public pages; code served to
   browsers is minified). Don't copy TradeByFocus's look or wording.
 
@@ -61,7 +72,7 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
 - `update_vps.ps1` / `setup_vps.ps1`: install/update on Windows (robocopy; keeps data, accounts, logs, signals, mt5-base).
 
 ## Working on it
-- Tests: `python -m pytest -q` (all must pass; currently 155). Worker tests use `tests/fake_mt5.py`.
+- Tests: `python -m pytest -q` (all must pass; currently 168). Worker tests use `tests/fake_mt5.py`.
 - Before packaging: `python tools/build_assets.py [path-to-esbuild]` (needs esbuild; icons need Chrome + playwright).
 - Version lives in three places: `server/system.py`, `node/worker.py`, `node/node_agent.py` (`VERSION = "x.y.z"`).
 - Release: push to `main`, then the owner uses **Update from GitHub** (Admin → System → Check for updates →

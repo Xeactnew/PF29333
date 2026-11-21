@@ -5,7 +5,7 @@
 {% macro m_name(r) %}{{ r.group if r.group != 'Your trade' else 'your own trade' }}{% endmacro %}
 {% if not accounts %}
   <div class="pagehead"><div><h1>Welcome, {{ user.username }}</h1><p>Connect an MT5 account and {{ site }} starts copying the VIP group's gold signals onto it.</p></div></div>
-  <div class="panel"><h2>Add your first MT5 account</h2><p>You'll need your MT5 login number, password and broker server name. Use the main (trading) password, not the investor one.</p><a class="btn primary" href="/accounts">Add MT5 account</a></div>
+  <div class="panel"><h2>Add your first MT5 account</h2><p>You'll need your MT5 login number and password (the main one, not the investor one). You pick your broker and server from a list.</p><a class="btn primary" href="/accounts">Add MT5 account</a></div>
 {% else %}
 <div class="hello"><h1>{{ hello }}, <span>{{ user.username }}</span></h1></div>
 {% if setup %}
@@ -17,17 +17,17 @@
 
 <section class="panel catchup" aria-label="Catch-up">
   <div class="catch-head">
-    <span class="eyebrow">// {% if away %}away {{ away|duration }} · since {{ away_from|date("%H:%M") }}{% else %}last 24 hours{% endif %}</span>
+    <span class="eyebrow">{% if away %}away {{ away|duration }} · since {{ away_from|date("%H:%M") }}{% else %}last 24 hours{% endif %}</span>
     <h2>{{ "Your catch-up" if away else "Your day so far" }}</h2>
   </div>
   {% set su = summary %}
   <div class="catch-grid">
-    <div class="catch-net"><span>Net closed</span><b class="{{ 'up' if su.net > 0 else 'down' if su.net < 0 }}">{{ su.net|signed(currency) }}</b>
+    <div class="catch-net"><span>Profit from closed trades</span><b class="{{ 'up' if su.net > 0 else 'down' if su.net < 0 }}">{{ su.net|signed(currency) }}</b>
       <small>{{ su.closed }} closed · {{ su.won }} won</small></div>
     <div class="catch-facts">
-      <div><span>Open</span><b class="num">{{ open_positions }}</b>{% if open_positions %}<small class="{{ 'up' if floating > 0 else 'down' if floating < 0 }}">{{ floating|signed(currency) }}</small>{% endif %}</div>
-      <div><span>Queued entries</span><b class="num">{{ waiting_entries }}</b></div>
-      <div><span>New calls</span><b class="num">{{ su.posts }}</b></div>
+      <div><span>Open trades</span><b class="num">{{ open_positions }}</b>{% if open_positions %}<small class="{{ 'up' if floating > 0 else 'down' if floating < 0 }}">{{ floating|signed(currency) }}</small>{% endif %}</div>
+      <div><span>Waiting to enter</span><b class="num">{{ waiting_entries }}</b></div>
+      <div><span>New signals</span><b class="num">{{ su.posts }}</b></div>
     </div>
   </div>
   {% if su.best or su.worst %}
@@ -100,7 +100,7 @@
     <div><span>Balance</span><b class="num">{{ balance|money(cur) }}</b></div>
     <div><span>Equity</span><b class="num">{{ equity|money(cur) }}</b></div>
     <div><span>Open trades</span><b class="num">{{ open_positions }}</b></div>
-    <div><span>Floating</span><b>{{ m.pnl(floating, cur) }}</b></div>
+    <div><span>Open profit</span><b>{{ m.pnl(floating, cur) }}</b></div>
     <div><span>Win rate</span><b class="num">{{ stats.win_rate }}%</b></div>
     <div><span>Trades closed</span><b class="num">{{ stats.trades }}</b></div>
   </div>
@@ -118,10 +118,10 @@
     {% endfor %}
   </section>
   <section class="panel">
-    <div class="panel-head"><h2>Recent closed trades</h2><a href="/signals">All calls</a></div>
+    <div class="panel-head"><h2>Recent closed trades</h2><a href="/signals">All signals</a></div>
     {% for d in recent %}
     <div class="mini-trade"><span class="side {{ d.side }}">{{ d.side|capitalize }}</span>
-      <span>{{ acc_names.get(d.account_id) }}<small>{{ d.time|date("%d %b %H:%M") }} · {{ d.volume }} lots</small></span>
+      <span>{{ sig_names.get(d.signal_id) or ("Your own trade" if not d.ours else "Gold") }}<small>{% if acc_names|length > 1 %}{{ acc_names.get(d.account_id) }} · {% endif %}{{ d.time|date("%d %b %H:%M") }} · {{ d.volume }} lots</small></span>
       <b class="{{ 'up' if d.profit > 0 else 'down' if d.profit < 0 }}">{{ d.profit|signed(currency) }}</b></div>
     {% else %}<p class="muted">Closed trades show here once your first signal has played out.</p>{% endfor %}
   </section>

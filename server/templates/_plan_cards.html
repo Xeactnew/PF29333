@@ -11,17 +11,18 @@
     {% endif %}
     <ul>
       <li>{{ f.max_accounts if f.max_accounts < 999 else "Unlimited" }} MT5 account{{ "s" if f.max_accounts != 1 }}</li>
-      <li>{{ site }} VIP signals</li>
-      <li class="{{ 'no' if not f.max_channels }}">{% if f.max_channels >= 999 %}Unlimited extra Telegram channels{% elif f.max_channels %}{{ f.max_channels }} extra Telegram channels{% else %}No extra channels{% endif %}</li>
-      <li class="{{ 'no' if not f.breakeven }}">Breakeven at TP1</li>
-      <li class="{{ 'no' if not f.manual_signals }}">Manual signals</li>
-      <li class="{{ 'no' if not f.risk_modes }}">Risk % sizing</li>
-      <li class="{{ 'no' if f.max_layers <= 1 }}">{{ "Up to " ~ f.max_layers ~ " layers" if f.max_layers > 1 else "Single entry" }}</li>
-      <li class="{{ 'no' if not f.daily_limits }}">Daily loss and profit limits</li>
-      <li class="{{ 'no' if not f.news_protection }}">News protection</li>
-      <li class="{{ 'no' if not f.signal_filters }}">Choose which signals it takes</li>
-      <li class="{{ 'no' if not f.smart_entry }}">Smart entry</li>
-      <li>Optimised copying of supported groups</li>
+      <li>Copies the {{ site }} VIP gold signals</li>
+      <li class="{{ 'no' if not f.max_channels }}">{% if f.max_channels >= 999 %}Copy as many of your own Telegram channels as you like{% elif f.max_channels %}Copy up to {{ f.max_channels }} of your own Telegram channels{% else %}No channels of your own{% endif %}</li>
+      <li class="{{ 'no' if not f.breakeven }}">Protects winning trades at TP1</li>
+      <li class="{{ 'no' if not f.manual_signals }}">Post your own signals</li>
+      <li class="{{ 'no' if not f.risk_modes }}">Trade size as a % of your balance</li>
+      <li class="{{ 'no' if f.max_layers <= 1 }}">{{ "Up to " ~ f.max_layers ~ " orders per signal" if f.max_layers > 1 else "1 order per signal" }}</li>
+      <li class="{{ 'no' if not f.daily_limits }}">Loss and profit limits</li>
+      <li class="{{ 'no' if not f.news_protection }}">Pauses around big news</li>
+      <li class="{{ 'no' if not f.signal_filters }}">Choose which signals to take</li>
+      <li class="{{ 'no' if not f.tp_control }}">Choose where trades take profit</li>
+      <li class="{{ 'no' if not f.smart_entry }}">Smart entry (waits for a good price)</li>
+      <li>Optimised copying of tested groups</li>
       <li class="{{ 'no' if not f.group_optimise }}">Ask us to optimise any group</li>
     </ul>
     {% if p.monthly_price or p.lifetime_price %}

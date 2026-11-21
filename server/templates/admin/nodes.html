@@ -1,7 +1,7 @@
 {% extends "admin/base.html" %}
 {% block title %}Servers{% endblock %}
 {% block content %}
-<div class="pagehead"><div><span class="eyebrow">// infrastructure</span><h1>Servers</h1><p>Each Windows VPS runs one MT5 per customer account. {{ cap.in_use }} of {{ cap.total }} slots used on {{ cap.online }} online VPS{% if cap.waiting %}, <b class="down">{{ cap.waiting }} waiting</b>{% endif %}.</p></div></div>
+<div class="pagehead"><div><span class="eyebrow">infrastructure</span><h1>Servers</h1><p>Each Windows VPS runs one MT5 per customer account. {{ cap.in_use }} of {{ cap.total }} slots used on {{ cap.online }} online VPS{% if cap.waiting %}, <b class="down">{{ cap.waiting }} waiting</b>{% endif %}.</p></div></div>
 
 {% if install %}
 <section class="panel glow" style="margin-bottom:18px">

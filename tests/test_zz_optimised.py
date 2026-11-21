@@ -42,7 +42,7 @@ def _customer(browser, name, plan="standard"):
 def test_optimised_copying_switch(browser):
     aid = _customer(browser, "opty")
     page = browser.get(f"/accounts/{aid}").text
-    assert "✦ Optimised copying" in page and "Every layer takes profit at TP1" in page
+    assert "✦ Optimised copying" in page and "Takes profit at TP1" in page
     assert "Copy exactly as posted instead" in page
     assert "✦ Optimised" in browser.get("/dashboard").text
     browser.post(f"/accounts/{aid}/groups/{KD}/optimised", {"optimised": "off"})

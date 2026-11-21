@@ -90,7 +90,7 @@ def test_overview_and_group_cards(browser):
     d = browser.get("/dashboard").text
     assert "Good " in d and ("Your catch-up" in d or "Your day so far" in d) and "Market hours" in d
     page = browser.get(f"/accounts/{aid}").text
-    assert "Signal groups" in page and "Gold Group" in page and "Armed" in page and "data-deck" in page
+    assert "Signal groups" in page and "Gold Group" in page and "Ready" in page and "data-deck" in page
     r = browser.post(f"/accounts/{aid}/groups/-1004242", {"trading": "on", "own": "on", "lot_mode": "fixed", "fixed_lot": "0.07",
                                                          "layers": "1", "tp_target": "tp1"})
     assert r.status_code == 200

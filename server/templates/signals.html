@@ -2,7 +2,7 @@
 {% block title %}Signals | {{ site }}{% endblock %}
 {% block content %}
 {% set cur = currency %}
-<div class="pagehead"><div><h1>Signals</h1><p>Every call from your groups, and what it did on your accounts.</p></div></div>
+<div class="pagehead"><div><h1>Signals</h1><p>Every signal from your groups, and what happened on your accounts.</p></div></div>
 
 {% set period = "week" %}{% set deck_title = "Swipe through your groups" %}
 {% include "_group_deck.html" %}
@@ -26,13 +26,14 @@
         </div>
         <div class="call-lv"><span class="down">SL {{ s.sl|price if s.sl else "—" }}</span>{% for tp in s.tps %}<span class="{{ 'up hit' if loop.index <= s.tp_reached else '' }}">TP{{ loop.index }} {{ tp|price }}</span>{% endfor %}</div>
         <div class="call-meta">{{ s.channel or s.source.title }} · {{ s.created_at|date("%H:%M") }} UTC
-          {% for u in updates.get(s.id, []) %}{% if loop.first %} · {% else %}, {% endif %}{{ {"tp_hit": ("all TPs hit" if (u.value or 0) >= 99 else "TP" ~ (u.value|int) ~ " hit"), "breakeven": "breakeven", "close": "closed", "close_partial": "partials taken", "sl_hit": "SL hit", "sl_move": "SL moved to " ~ (u.value|price), "cancel": "cancelled", "levels": ("SL set to " ~ (u.value|price)) if u.value else "TPs set"}.get(u.kind, u.kind) }}{% endfor %}</div>
+          {% for u in updates.get(s.id, []) %}{% if loop.first %} · {% else %}, {% endif %}{{ {"tp_hit": ("all TPs hit" if (u.value or 0) >= 99 else "TP" ~ (u.value|int) ~ " hit"), "breakeven": "breakeven", "close": "closed", "close_partial": "partials taken", "sl_hit": "SL hit", "sl_move": "SL moved to " ~ (u.value|price), "cancel": "cancelled", "close_worst": "worst entry closed", "levels": ("SL set to " ~ (u.value|price)) if u.value else "levels set"}.get(u.kind, u.kind) }}{% endfor %}</div>
         <div class="call-mine {{ r.mine_cls }}">{{ r.mine }}</div>
         {% if s.source_id == mine and s.status == "open" %}
         <form method="post" action="/signals/{{ s.id }}/update" class="actions call-ctl">
           {{ m.csrf_field(csrf) }}
           <button class="btn small" name="kind" value="breakeven">Breakeven</button>
           <button class="btn small" name="kind" value="close_partial">Close half</button>
+          <button class="btn small" name="kind" value="close_worst">Close worst entry</button>
           <button class="btn small danger" name="kind" value="close" data-confirm="Close this signal's trades?">Close</button>
           <button class="btn small" name="kind" value="cancel">Cancel unfilled</button>
         </form>
@@ -40,7 +41,7 @@
       </article>
       {% endfor %}
     {% else %}
-      <h2>No calls yet</h2><p class="muted">New calls from your groups appear here the moment they're posted.</p>
+      <h2>No signals yet</h2><p class="muted">New signals from your groups appear here the moment they're posted.</p>
     {% endfor %}
   </section>
   <section class="panel">
