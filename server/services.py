@@ -8,7 +8,7 @@ from sqlalchemy import and_, false, func, or_, select
 
 from . import config, notify
 from .db import (Account, AccountSource, Activity, Deal, Event, Node, Plan, Renewal, Signal,
-                 SignalUpdate, Snapshot, Source, User, get_setting, main_source, utcnow)
+                 SignalUpdate, Snapshot, Source, User, get_setting, main_source, set_setting, utcnow)
 from .parser import ParsedSignal
 from .plans import effective_settings, feature
 
@@ -85,6 +85,9 @@ def create_signal(s, source: Source, p: ParsedSignal, raw: str = "", tg_msg_id: 
     s.flush()
     payload = {"signal": {"id": sig.id, **p.as_dict(), "source": sig.channel or source.title,
                           "source_id": source.id, "group": group_key(sig)}}
+    rule = group_rule(s, sig)
+    if rule:
+        payload["signal"]["rule"] = {k: rule[k] for k in ("tp_target", "wait_for_zone") if k in rule}
     if target_account_ids:
         for aid in target_account_ids:
             s.add(Event(kind="signal", account_id=aid, signal_id=sig.id, payload=payload))
@@ -94,7 +97,8 @@ def create_signal(s, source: Source, p: ParsedSignal, raw: str = "", tg_msg_id: 
 
 
 def add_update(s, sig: Signal, kind: str, value: float | None = None, raw: str = "",
-               created_by: str = "telegram", tps: list[float] | None = None) -> SignalUpdate:
+               created_by: str = "telegram", tps: list[float] | None = None,
+               zone: tuple[float, float] | None = None) -> SignalUpdate:
     upd = SignalUpdate(signal_id=sig.id, kind=kind, value=value, raw_text=raw[:2000], created_by=created_by)
     s.add(upd)
     if kind == "levels":            # the group posted (or edited in) the stop loss / targets
@@ -102,6 +106,8 @@ def add_update(s, sig: Signal, kind: str, value: float | None = None, raw: str =
             sig.sl = value
         if tps:
             sig.tps = list(tps)
+        if zone and zone[0] and not sig.entry_low:    # a quick call's zone, posted right after it
+            sig.entry_low, sig.entry_high = zone
     if kind == "tp_hit" and value:
         sig.tp_reached = max(sig.tp_reached, int(value) if value < 99 else len(sig.tps or []) or 3)
         if value >= 99 or (sig.tps and int(value) >= len(sig.tps)):
@@ -116,6 +122,8 @@ def add_update(s, sig: Signal, kind: str, value: float | None = None, raw: str =
                           "force": created_by.startswith("user:")}}
     if tps:
         payload["update"]["tps"] = list(tps)
+    if zone and zone[0]:
+        payload["update"]["zone"] = [float(zone[0]), float(zone[1])]
     rule = group_rule(s, sig)
     if rule and kind in ("breakeven", "sl_move"):
         payload["update"]["be_lock_pips"] = rule.get("be_lock_pips", 0)
@@ -504,6 +512,44 @@ def group_stats(s, account_ids, since: datetime) -> dict:
     for g in out.values():
         g["win_rate"] = round(100 * g["wins"] / g["trades"]) if g["trades"] else 0
     return out
+
+
+OPT_KEYS = ("tp_target", "wait_for_zone")
+
+
+def optimisation(s, key: str) -> list[str]:
+    """What optimised copying does for one group (empty when the group isn't optimised)."""
+    r = (get_setting(s, "group_rules") or {}).get(str(key)) or {}
+    out = []
+    tp = r.get("tp_target")
+    if tp in ("tp1", "tp2"):
+        out.append(f"Every layer takes profit at {tp.upper()}")
+    elif tp == "spread":
+        out.append("Takes profit across the group's targets")
+    if r.get("wait_for_zone"):
+        out.append('Quick "BUY / SELL now" calls wait for the zone the group posts next')
+    return out
+
+
+def optimise_request(s, key: str) -> dict:
+    return (get_setting(s, "optimise_requests") or {}).get(str(key)) or {}
+
+
+def request_optimise(s, user, key: str, title: str) -> bool:
+    """An Extreme customer asks us to optimise a group. False if it was already asked for (by anyone)."""
+    reqs = dict(get_setting(s, "optimise_requests") or {})
+    r = dict(reqs.get(key) or {})
+    users = list(r.get("users") or [])
+    new_user = user.id not in users
+    if new_user:
+        users.append(user.id)
+    if not r:
+        r = {"title": title[:120], "at": utcnow().isoformat(timespec="minutes"), "status": "requested", "note": ""}
+    r["users"] = users[-50:]
+    reqs[key] = r
+    set_setting(s, "optimise_requests", reqs)
+    log(s, "optimise_request", user.id, f"{title} ({key})", user.username)
+    return new_user
 
 
 def group_rule(s, sig: Signal) -> dict:

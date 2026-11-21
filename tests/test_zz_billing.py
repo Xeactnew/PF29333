@@ -167,7 +167,7 @@ def test_account_server_is_tidied_and_keep_screen_tool(app, browser):
     browser.get("/login")
     browser.post("/login", {"username": "paula", "password": "password123"})
     r = browser.get("/accounts")
-    assert "VantageMarkets-Live" in r.text and "data-broker-filter" in r.text
+    assert "VantageMarkets-Live" in r.text and "data-srvpick" in r.text and "Prop firms" in r.text
     browser.post("/accounts/add", {"login": "8675309", "password": "pw", "server": "puprime-live"})
     with SessionLocal() as s:
         assert s.scalar(select(Account).where(Account.login == "8675309")).server == "PUPrime-Live"

@@ -67,7 +67,7 @@
     <button class="btn primary" type="submit">Copy signals from these</button>
   </form>
 
-  <h3 style="margin-top:22px" id="rules">How each group's "risk free" is copied</h3>
+  <h3 style="margin-top:22px" id="rules">House rules per group</h3>
   <p class="muted">When a group says "risk free" / breakeven, every customer's trade has its stop moved to <b>its own entry</b> plus the pips below, so someone who got in later is protected the same way. Tick the box if the group's "move SL to 3725" should be treated the same (the more protective stop of the two is used).</p>
   <form method="post" action="/admin/telegram/rules">
     {{ m.csrf_field(csrf) }}
@@ -76,11 +76,39 @@
       <b>{{ title }}</b>
       <label class="inline">Lock <input name="lock_{{ chat }}" type="number" step="0.5" min="0" max="500" value="{{ r.be_lock_pips|default(0)|round(1) }}" style="width:80px"> pips past entry</label>
       <label class="check"><input type="checkbox" name="asbe_{{ chat }}" {{ 'checked' if r.sl_move_as_be }}> <span>"Move SL to a price" counts as risk free</span></label>
+      <label class="inline">Take profit
+        <select name="tp_{{ chat }}">
+          {% for v, l in [("", "each account's setting"), ("tp1", "everything at TP1"), ("tp2", "everything at TP2"), ("spread", "spread across the TPs")] %}<option value="{{ v }}" {{ 'selected' if (r.tp_target or '') == v }}>{{ l }}</option>{% endfor %}
+        </select></label>
+      <label class="check"><input type="checkbox" name="wait_{{ chat }}" {{ 'checked' if r.wait_for_zone }}> <span>Quick "BUY/SELL NOW" calls wait for the zone the group posts next</span></label>
     </div>
     {% endfor %}
     <button class="btn" type="submit">Save group rules</button>
   </form>
+  <p class="muted" style="font-size:13px">A group with a take-profit or wait-for-zone rule shows as <b>✦ Optimised</b> to customers who copy it. Each customer can switch optimised copying off for their account.</p>
+
   {% endif %}
+  <h3 style="margin-top:22px" id="optimise">Optimisation requests</h3>
+  {% if opt_requests %}
+  <p class="muted">Extreme customers asked us to optimise these groups. To optimise one, replay its calls (<code>tools/backtest</code>, needs Admin → System → Export research data) and set its rules above. Otherwise mark it "can't be optimised" with a short reason: the customer sees it on the group's card.</p>
+  <form method="post" action="/admin/telegram/optimise-requests">
+    {{ m.csrf_field(csrf) }}
+    {% for r in opt_requests %}
+    <div class="rule-row">
+      <b>{{ r.title }}</b> <small class="muted">{{ r.chat }} · asked {{ r.at[:10] if r.at }} by {{ r.names|join(", ") or "?" }}{{ " · history exported" if r.messages }}</small>
+      {% if r.optimised %}<span class="tag go">Optimised</span>{% else %}
+      <label class="inline">Answer
+        <select name="st_{{ r.chat }}">
+          <option value="requested" {{ 'selected' if r.status != 'not_possible' }}>We're looking at it</option>
+          <option value="not_possible" {{ 'selected' if r.status == 'not_possible' }}>Can't be optimised</option>
+        </select></label>{% endif %}
+      <label class="inline">Note to the customer <input name="note_{{ r.chat }}" type="text" maxlength="300" value="{{ r.note }}" placeholder="e.g. Too few calls in the last 90 days" style="min-width:260px"></label>
+      <label class="check"><input type="checkbox" name="del_{{ r.chat }}"> <span>Remove the request</span></label>
+    </div>
+    {% endfor %}
+    <button class="btn" type="submit">Save answers</button>
+  </form>
+  {% else %}<p class="muted">No requests yet. Extreme customers can ask from a group's card on their account page.</p>{% endif %}
 </section>
 
 <section class="panel">

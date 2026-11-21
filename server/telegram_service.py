@@ -127,7 +127,8 @@ def handle_message(source_id: int, msg_id: int, text: str, reply_to: int | None,
             # the full signal posted straight after a "BUY NOW": fill that one in, don't open twice
             waiting = services.signal_waiting_for_levels(s, source_id, p.side, chat_id=chat_id)
             if waiting:
-                services.add_update(s, waiting, "levels", p.sl, text, tps=p.tps or None)
+                services.add_update(s, waiting, "levels", p.sl, text, tps=p.tps or None,
+                                    zone=(p.entry_low, p.entry_high))
                 s.commit()
                 return f"levels:{waiting.id}"
         if p:

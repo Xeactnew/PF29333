@@ -21,6 +21,8 @@
       <li class="{{ 'no' if not f.news_protection }}">News protection</li>
       <li class="{{ 'no' if not f.signal_filters }}">Choose which signals it takes</li>
       <li class="{{ 'no' if not f.smart_entry }}">Smart entry</li>
+      <li>Optimised copying of supported groups</li>
+      <li class="{{ 'no' if not f.group_optimise }}">Ask us to optimise any group</li>
     </ul>
     {% if p.monthly_price or p.lifetime_price %}
     <div class="plan-actions">

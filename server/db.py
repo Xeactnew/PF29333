@@ -396,7 +396,12 @@ DEFAULT_SETTINGS = {
     "gh_update_mode": "auto",    # new commits on GitHub main install by themselves (the owner OKs each push with Claude)
     # house rules per VIP group (Telegram chat id). Fx by KD: "risk free" / "move SL to <price>" =
     # each trade's own entry + 15 pips, so late entries are protected the same way. Editable in Admin → Telegram.
-    "group_rules": {"-1004498117492": {"be_lock_pips": 15.0, "sl_move_as_be": True}},
+    # KD + FX_BY_H: tp_target and wait_for_zone come from the 90-day replay of their calls (Nov 2026):
+    # TP1 for everything, and KD's quick "BUY GOLD!" waits for his zone instead of buying at market.
+    "optimise_requests": {},     # chat -> {title, users, at, status: requested/not_possible, note}
+    "group_rules": {"-1004498117492": {"be_lock_pips": 15.0, "sl_move_as_be": True, "tp_target": "tp1",
+                                       "wait_for_zone": True},
+                    "-1004407977092": {"tp_target": "tp1"}},
     "allow_signup": True,
     "contact_text": "We take crypto or bank transfer. Message @xaupipsfarmer on Telegram to pay and we'll "
                     "switch your plan on straight away.",
@@ -411,8 +416,12 @@ DEFAULT_SETTINGS = {
 def seed(s) -> None:
     from .plans import DEFAULT_PLANS
     for p in DEFAULT_PLANS:
-        if not s.scalar(select(Plan).where(Plan.key == p["key"])):
+        plan = s.scalar(select(Plan).where(Plan.key == p["key"]))
+        if not plan:
             s.add(Plan(**p))
+        elif any(k not in (plan.features or {}) for k in p["features"]):
+            # a feature added in a later version: the plan gets its default, the admin's own values stay
+            plan.features = {**p["features"], **(plan.features or {})}
     if not s.scalar(select(Source).where(Source.kind == "main")):
         s.add(Source(kind="main", title=f"{config.SITE_NAME} VIP"))
     for k, v in DEFAULT_SETTINGS.items():

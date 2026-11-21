@@ -9,7 +9,7 @@
     {% set st = g[per] %}
     <article class="gcard {{ 'is-ready' if g.ready else 'is-held' }}{{ ' in-trade' if g.in_trade }}" id="g-{{ g.key }}">
       <div class="gtop">
-        <div><h3>{{ g.title }}</h3><small>{{ g.source if g.source and g.source != g.title else "Telegram group" }}</small></div>
+        <div><h3>{{ g.title }}</h3><small>{% if g.optimised %}<span class="gopt-badge">✦ Optimised</span> {% endif %}{{ g.source if g.source and g.source != g.title else "Telegram group" }}</small></div>
         <span class="tag {{ 'trade' if g.in_trade else ('go' if g.ready else 'hold') }}">{{ "In a trade" if g.in_trade else ("Armed" if g.ready else ("Off" if g.paused else "On hold")) }}</span>
       </div>
       <p class="gstate">{% if g.in_trade %}A trade from this group is open now.{% elif g.ready %}Copies this group's next call.{% else %}{{ blockers[0][2] or blockers[0][1] }}{% endif %}</p>

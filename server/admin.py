@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, or_, select
 
 from . import billing as billing_mod
-from . import mailer, notify, reports, runtime, security, services, support, system
+from . import config, mailer, notify, reports, runtime, security, services, support, system
 from .customer import USERNAME_RE, _parse_manual
 from .db import (Account, Activity, Admin, Deal, Node, Plan, Renewal, Signal, SignalUpdate, Source, Ticket,
                  UpgradeRequest, User, get_setting, main_source, set_setting, utcnow)
@@ -734,7 +734,60 @@ async def telegram_page(request: Request, s=Depends(db_session)):
         pending=tg.pending_login_phone(tg.MAIN_KEY), dialogs=dialogs, dialog_error=dialog_error,
         vip=[str(c) for c in runtime.vip_chats()], bot_user=runtime.bot_username(), has_bot=bool(runtime.bot_token()),
         admins=list(s.scalars(select(Admin))), link=link, rules=get_setting(s, "group_rules") or {},
-        vip_titles=_vip_titles(s, dialogs)))
+        vip_titles=_rule_titles(s, dialogs), opt_requests=_opt_requests(s)))
+
+
+def _rule_chats(s) -> list[str]:
+    """Groups that can have house rules: the ticked VIP groups, groups customers asked us to optimise,
+    and any group that already has rules."""
+    out = [str(c) for c in runtime.vip_chats()]
+    for c in [*(get_setting(s, "optimise_requests") or {}), *(get_setting(s, "group_rules") or {})]:
+        if str(c) not in out:
+            out.append(str(c))
+    return out
+
+
+def _rule_titles(s, dialogs) -> dict:
+    titles = _vip_titles(s, dialogs)
+    reqs = get_setting(s, "optimise_requests") or {}
+    for c in _rule_chats(s):
+        if c not in titles:
+            titles[c] = (reqs.get(c) or {}).get("title") or c
+    return titles
+
+
+def _opt_requests(s) -> list[dict]:
+    rules = get_setting(s, "group_rules") or {}
+    out = []
+    for chat, r in (get_setting(s, "optimise_requests") or {}).items():
+        names = [u.username for u in s.scalars(select(User).where(User.id.in_(r.get("users") or [-1])))]
+        out.append({"chat": chat, **r, "names": names, "optimised": bool(services.optimisation(s, chat)),
+                    "messages": (config.ROOT / "data" / "research" / f"messages-{chat}.jsonl").exists()})
+    out.sort(key=lambda x: x.get("at") or "", reverse=True)
+    return out
+
+
+@router.post("/telegram/optimise-requests")
+async def telegram_optimise_requests(request: Request, s=Depends(db_session)):
+    """Answer customers' "optimise this group" requests (the card shows the answer)."""
+    admin = current_admin(request, s)
+    form = await form_data(request)
+    reqs = dict(get_setting(s, "optimise_requests") or {})
+    for chat in list(reqs):
+        r = dict(reqs[chat])
+        if form.get(f"del_{chat}") == "on":
+            reqs.pop(chat)
+            continue
+        st = form.get(f"st_{chat}")
+        if st in ("requested", "not_possible"):
+            r["status"] = st
+        r["note"] = str(form.get(f"note_{chat}", r.get("note", "")))[:300]
+        reqs[chat] = r
+    set_setting(s, "optimise_requests", reqs)
+    services.log(s, "optimise_requests_set", None, f"{len(reqs)} requests", admin.username)
+    s.commit()
+    flash(request, "Optimisation requests saved. Customers see the answer on the group's card.")
+    return redirect("/admin/telegram#optimise")
 
 
 def _vip_titles(s, dialogs) -> dict:
@@ -752,14 +805,27 @@ async def telegram_rules(request: Request, s=Depends(db_session)):
     admin = current_admin(request, s)
     form = await form_data(request)
     rules = {}
-    for chat in (str(c) for c in runtime.vip_chats()):
+    for chat in _rule_chats(s):
+        if f"tp_{chat}" not in form and f"lock_{chat}" not in form:     # not on the form: keep as it was
+            if chat in (get_setting(s, "group_rules") or {}):
+                rules[chat] = (get_setting(s, "group_rules") or {})[chat]
+            continue
         try:
             lock = max(0.0, min(500.0, float(form.get(f"lock_{chat}") or 0)))
         except ValueError:
             lock = 0.0
         as_be = form.get(f"asbe_{chat}") == "on"
+        tp = form.get(f"tp_{chat}") if form.get(f"tp_{chat}") in ("tp1", "tp2", "spread") else ""
+        wait = form.get(f"wait_{chat}") == "on"
+        r = {}
         if lock or as_be:
-            rules[chat] = {"be_lock_pips": lock, "sl_move_as_be": as_be}
+            r.update(be_lock_pips=lock, sl_move_as_be=as_be)
+        if tp:
+            r["tp_target"] = tp
+        if wait:
+            r["wait_for_zone"] = True
+        if r:
+            rules[chat] = r
     set_setting(s, "group_rules", rules)
     services.log(s, "group_rules_set", None, str(rules)[:200], admin.username)
     s.commit()

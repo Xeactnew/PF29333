@@ -77,3 +77,22 @@
 {% macro icon(name) -%}
 <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ tab_icons[name]|safe }}</svg>
 {%- endmacro %}
+
+{# Broker → server dropdowns. Without JavaScript only the typed server box shows. #}
+{% macro server_picker(choices, prop, current="", required=True, pfx="srv") -%}
+<div class="srvpick" data-srvpick{{ ' data-required' if required }}>
+  <div class="field" data-srv-brokerbox hidden><label for="{{ pfx }}-b">Broker</label>
+    <select id="{{ pfx }}-b" data-srv-broker>
+      <option value="">Choose your broker</option>
+      <optgroup label="Brokers">{% for name in choices if name not in prop %}<option value="{{ name }}">{{ name }}</option>{% endfor %}</optgroup>
+      <optgroup label="Prop firms">{% for name in choices if name in prop %}<option value="{{ name }}">{{ name }}</option>{% endfor %}</optgroup>
+      <option value="__other">My broker isn't listed</option>
+    </select></div>
+  <div class="field" data-srv-listbox hidden><label for="{{ pfx }}-s">Server</label>
+    <select id="{{ pfx }}-s" data-srv-select></select>
+    <div class="hint">Not sure which one? It's in your broker's welcome email, or in MT5 under File → Login to Trade Account.</div></div>
+  <div class="field" data-srv-typed><label for="{{ pfx }}">Server name</label><input id="{{ pfx }}" name="server" type="text" {{ 'required' if required }} value="{{ current }}" placeholder="e.g. PUPrime-Live 2" autocapitalize="off" spellcheck="false">
+    <div class="hint">Type it exactly as your broker's email or MT5 shows it. Our MT5 looks new servers up by itself.</div></div>
+  <script type="application/json" data-srv-data>{{ choices|tojson }}</script>
+</div>
+{%- endmacro %}

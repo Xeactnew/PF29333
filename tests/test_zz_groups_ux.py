@@ -218,3 +218,53 @@ def test_every_logo_has_its_own_gradient(browser):
     page = browser.get("/dashboard").text
     ids = _re.findall(r'linearGradient id="([^"]+)"', page)
     assert len(ids) >= 1 and len(ids) == len(set(ids))
+
+
+def test_house_rule_waits_for_kds_zone_and_takes_tp1(rig):
+    mt5, api, w, clock = rig
+    api.settings.update(layers=3, tp_target="spread", instant_entry=True)
+    move(rig, 4045)
+    rule = {"tp_target": "tp1", "wait_for_zone": True}
+    api.push("signal", signal={**SIG, "id": 97, "entry_low": 0, "entry_high": 0, "sl": None, "tps": [],
+                               "instant": True, "rule": rule})
+    w.step()
+    assert not mt5.positions and not mt5.orders and "97" in w.state["await_sl"]
+    api.push("update", update={"signal_id": 97, "kind": "levels", "value": 4027, "tps": [4047, 4055, 4065],
+                               "zone": [4030, 4037]})
+    w.step()
+    tps = {o.tp for o in mt5.orders.values()} | {p.tp for p in mt5.positions.values()}
+    assert len(mt5.orders) + len(mt5.positions) == 3 and tps == {4047}       # zone entries, all at TP1
+    assert all(o.price_open <= 4037 for o in mt5.orders.values())
+
+
+def test_quick_call_zone_rides_on_the_levels_update(browser):
+    from server.db import Event
+    chat = -1004498117492
+    assert ts.handle_message(_src(), 88001, "BUY GOLD!", None, chat_id=chat).startswith("signal:")
+    r = ts.handle_message(_src(), 88002, "💵XAUUSD BUY ZONE\n\nEntry: 4030-4037\n\nStoploss: 4027\n\nTP1: 4047",
+                          None, chat_id=chat)
+    assert r.startswith("levels:")
+    with SessionLocal() as s:
+        sig_ev = s.query(Event).filter(Event.kind == "signal").order_by(Event.id.desc()).first()
+        assert sig_ev.payload["signal"]["rule"] == {"tp_target": "tp1", "wait_for_zone": True}
+        up = s.query(Event).filter(Event.kind == "update").order_by(Event.id.desc()).first()
+        assert up.payload["update"]["zone"] == [4030.0, 4037.0]
+
+
+def test_admin_rules_form_keeps_every_rule(monkeypatch):
+    import asyncio
+    from server import admin, runtime
+    from server.db import get_setting
+    monkeypatch.setattr(runtime, "vip_chats", lambda: [-1004498117492])
+    form = {"lock_-1004498117492": "15", "asbe_-1004498117492": "on", "tp_-1004498117492": "tp1",
+            "wait_-1004498117492": "on"}
+
+    async def fake_form(_r):
+        return form
+    monkeypatch.setattr(admin, "form_data", fake_form)
+    monkeypatch.setattr(admin, "current_admin", lambda r, s: type("A", (), {"username": "t"})())
+    monkeypatch.setattr(admin, "flash", lambda *a, **k: None)
+    with SessionLocal() as s:
+        asyncio.run(admin.telegram_rules(None, s))
+        r = get_setting(s, "group_rules")["-1004498117492"]
+    assert r == {"be_lock_pips": 15.0, "sl_move_as_be": True, "tp_target": "tp1", "wait_for_zone": True}

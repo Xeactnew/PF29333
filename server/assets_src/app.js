@@ -1,4 +1,4 @@
-// Small helpers: charts drawn as SVG, clickable rows, confirm buttons, broker picker.
+// Small helpers: charts drawn as SVG, clickable rows, confirm buttons, broker and server dropdowns.
 (function () {
   // Time limit: show the date box only for "Until a date"
   document.querySelectorAll("select[data-limit]").forEach((sel) => {
@@ -7,15 +7,48 @@
     sel.addEventListener("change", sync); sync();
   });
 
-  // Broker picker: limit the server suggestions to the chosen broker
-  document.querySelectorAll("select[data-broker-filter]").forEach((sel) => {
-    const input = sel.closest("form").querySelector("input[name=server]");
-    sel.addEventListener("change", () => {
-      const list = [...document.querySelectorAll("datalist[data-broker]")].find((d) => d.dataset.broker === sel.value);
-      input.setAttribute("list", list ? list.id : "servers-all");
-      if (list && !input.value && list.options.length === 1) input.value = list.options[0].value;
-      input.focus();
+  // Broker → server dropdowns; "isn't listed" opens a box to type the server
+  document.querySelectorAll("[data-srvpick]").forEach((box) => {
+    const data = JSON.parse(box.querySelector("[data-srv-data]").textContent || "{}");
+    const brokerBox = box.querySelector("[data-srv-brokerbox]"), listBox = box.querySelector("[data-srv-listbox]");
+    const typed = box.querySelector("[data-srv-typed]"), input = typed.querySelector("input");
+    const bSel = box.querySelector("[data-srv-broker]"), sSel = box.querySelector("[data-srv-select]");
+    const need = box.hasAttribute("data-required"), OTHER = "__other";
+    const key = (x) => String(x).replace(/[\s_\-.]+/g, "").toLowerCase();
+    const fill = (name) => {
+      sSel.innerHTML = "";
+      const add = (v, label) => { const o = document.createElement("option"); o.value = v; o.textContent = label; sSel.appendChild(o); };
+      const list = data[name] || [];
+      if (list.length !== 1) add("", "Choose your server");
+      list.forEach((srv) => add(srv, srv));
+      add(OTHER, "My server isn't listed");
+    };
+    const sync = () => {
+      const b = bSel.value, known = !!b && b !== OTHER;
+      const typing = b === OTHER || (known && sSel.value === OTHER);
+      listBox.hidden = !known;
+      typed.hidden = !typing;
+      bSel.required = need;
+      sSel.required = need && known && !typing;
+      input.required = need && typing;
+      if (known && !typing) input.value = sSel.value;
+      else if (!typing) input.value = "";
+    };
+    // start from the server already saved (account page) or nothing
+    const cur = input.value.trim();
+    let found = "";
+    if (cur) for (const name in data) if (data[name].some((x) => key(x) === key(cur))) { found = name; break; }
+    brokerBox.hidden = false;
+    if (found) { bSel.value = found; fill(found); sSel.value = data[found].find((x) => key(x) === key(cur)); }
+    else if (cur) bSel.value = OTHER;
+    bSel.addEventListener("change", () => {
+      if (bSel.value && bSel.value !== OTHER) fill(bSel.value);
+      if (bSel.value === OTHER) input.value = "";
+      sync();
+      (bSel.value === OTHER ? input : sSel).focus();
     });
+    sSel.addEventListener("change", () => { if (sSel.value === OTHER) input.value = ""; sync(); if (sSel.value === OTHER) input.focus(); });
+    sync();
   });
 
   const NS = "http://www.w3.org/2000/svg";

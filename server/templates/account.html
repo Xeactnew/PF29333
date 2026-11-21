@@ -92,6 +92,36 @@
         <div><dt>7 days</dt><dd>{{ m.pnl(g.week.pnl, cur) }}</dd></div>
       </dl>
       <p class="gsize">{% if g.cfg.own %}Own size: {% if g.cfg.lot_mode == "fixed" %}{{ g.cfg.fixed_lot }} lots{% elif g.cfg.lot_mode == "risk_percent" %}{{ g.cfg.risk_percent }}% risk{% else %}{{ g.cfg.risk_amount|money(cur) }} risk{% endif %} × {{ g.cfg.layers }} layer{{ 's' if g.cfg.layers != 1 }}{% else %}Account trade settings{% endif %}</p>
+      {% set o = g.opt %}
+      {% if o.summary %}
+      <div class="gopt {{ 'on' if o.on else 'off' }}">
+        <div class="gopt-head"><b>✦ Optimised copying</b><span class="tag {{ 'go' if o.on else 'hold' }}">{{ "On" if o.on else "Off" }}</span></div>
+        <p>We replayed this group's recent calls on real gold prices and copy it the way that paid best:</p>
+        <ul>{% for line in o.summary %}<li>{{ line }}</li>{% endfor %}</ul>
+        <form method="post" action="/accounts/{{ acc.id }}/groups/{{ g.key }}/optimised">{{ m.csrf_field(csrf) }}
+          <input type="hidden" name="optimised" value="{{ 'off' if o.on else 'on' }}">
+          <button class="btn small{{ '' if o.on else ' primary' }}" type="submit">{{ "Copy exactly as posted instead" if o.on else "Turn optimised copying on" }}</button>
+        </form>
+        <small>Your trade size, layers and limits still apply. Past results don't promise future ones.</small>
+      </div>
+      {% elif o.telegram %}
+      <div class="gopt ask{{ ' locked' if not o.can }}">
+        <div class="gopt-head"><b>✦ Optimise this group</b>{% if not o.can %}<span class="tag lock">Extreme</span>{% endif %}</div>
+        <p>We replay this group's recent calls on real gold prices to find the best way to copy it: which targets to take, and when to enter.</p>
+        <p class="disclaimer">Not possible for every group. Some post too few calls, post them too late, or leave nothing we can improve. You'll see the answer here either way.</p>
+        {% if o.req.status == "not_possible" %}
+        <p class="gopt-answer">We looked at this group: it can't be optimised.{% if o.req.note %} {{ o.req.note }}{% endif %}</p>
+        {% elif o.req %}
+        <p class="gopt-answer">Requested{% if o.req.at %} on {{ o.req.at[:10] }}{% endif %}. We're looking at it.</p>
+        {% elif o.can %}
+        <form method="post" action="/accounts/{{ acc.id }}/groups/{{ g.key }}/optimise">{{ m.csrf_field(csrf) }}
+          <button class="btn small primary" type="submit">Optimise this group</button>
+        </form>
+        {% else %}
+        <div class="row-btns"><button class="btn small" type="button" disabled>Optimise this group</button><a class="btn small primary" href="/plan">Needs Extreme: see plans</a></div>
+        {% endif %}
+      </div>
+      {% endif %}
       <details class="gedit">
         <summary>Settings for this group</summary>
         <form method="post" action="/accounts/{{ acc.id }}/groups/{{ g.key }}">{{ m.csrf_field(csrf) }}
@@ -109,7 +139,7 @@
             <div class="field"><label>Take profits</label>
               <select name="tp_target" {{ 'disabled' if 'tp_target' in locked }}>
                 {% for v, l in [("spread", "Spread across TP1, TP2, TP3"), ("tp1", "All at TP1"), ("tp2", "All at TP2"), ("tp3", "All at TP3"), ("last", "All at the last TP")] %}<option value="{{ v }}" {{ 'selected' if (g.cfg.tp_target or settings.tp_target) == v }}>{{ l }}</option>{% endfor %}
-              </select></div>
+              </select>{% if g.opt.on %}<div class="hint">Optimised copying sets the targets for this group.</div>{% endif %}</div>
           </div>
           <div class="row-btns"><button class="btn primary" type="submit">Save changes</button>
             {% if g.cfg %}<button class="btn" type="submit" name="action" value="reset">Back to account settings</button>{% endif %}</div>
@@ -277,7 +307,7 @@
     <p class="muted">Changed your MT5 password or moved server? Update it here and the account reconnects.</p>
     <form method="post" action="/accounts/{{ acc.id }}/credentials" autocomplete="off">
       {{ m.csrf_field(csrf) }}
-      <div class="field"><label for="c-srv">Server</label><input id="c-srv" name="server" type="text" value="{{ acc.server }}"></div>
+      {{ m.server_picker(broker_choices, prop_firms, acc.server, required=False, pfx="c-srv") }}
       <div class="field"><label for="c-pw">New password</label><input id="c-pw" name="password" type="password" autocomplete="new-password" placeholder="Leave blank to keep"></div>
       <button class="btn" type="submit">Update login</button>
     </form>

@@ -512,6 +512,22 @@ a, button, .tab { -webkit-tap-highlight-color: transparent; }
 .gnums div { padding: 8px 4px; }
 .gnums dd { margin: 2px 0 0; font: 600 15px var(--mono); }
 .gsize { font-size: 12.5px; color: var(--straw-dim); margin: 10px 0 6px; }
+/* optimised copying on a group card */
+.gopt { margin: 10px 0 8px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--furrow); background: rgba(var(--raised-rgb),.55); font-size: 13px; }
+.gopt.on { border-color: rgba(var(--gilt-rgb),.45); background: var(--grad-soft); }
+.gopt-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.gopt-head b { color: var(--gold); font-weight: 600; }
+.gopt p { margin: 4px 0; color: var(--straw-dim); }
+.gopt ul { margin: 6px 0 10px; padding-left: 18px; }
+.gopt li { margin: 2px 0; }
+.gopt small { display: block; margin-top: 8px; color: var(--straw-dim); font-size: 11.5px; }
+.gopt .disclaimer { font-size: 12px; font-style: italic; }
+.gopt .gopt-answer { color: var(--straw); }
+.gopt form { margin: 8px 0 0; }
+.gopt.locked .gopt-head b { color: var(--straw-dim); }
+.tag.lock { background: rgba(var(--gilt-rgb),.14); color: var(--gold); }
+.gopt-badge { color: var(--gold); font-weight: 600; }
+.srvpick .field[hidden] { display: none; }
 .gedit form { margin-top: 10px; }
 .deck-dots { display: none; }
 @media (max-width: 900px) {

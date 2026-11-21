@@ -20,6 +20,7 @@ FEATURES = [
     {"key": "signal_filters", "label": "Signal filters (direction, max SL, hours, spread)", "type": "bool"},
     {"key": "smart_entry", "label": "Smart entry", "type": "bool"},
     {"key": "tp_control", "label": "Choose TP targets per layer", "type": "bool"},
+    {"key": "group_optimise", "label": "Ask us to optimise a group", "type": "bool"},
 ]
 
 UNLIMITED = 999
@@ -31,7 +32,7 @@ DEFAULT_PLANS = [
             "max_accounts": 1, "max_channels": 0, "max_layers": 1,
             "manual_signals": True, "breakeven": True, "risk_modes": False,
             "daily_limits": False, "news_protection": False, "signal_filters": False,
-            "smart_entry": False, "tp_control": False,
+            "smart_entry": False, "tp_control": False, "group_optimise": False,
         },
     },
     {
@@ -40,7 +41,7 @@ DEFAULT_PLANS = [
             "max_accounts": 3, "max_channels": 5, "max_layers": 5,
             "manual_signals": True, "breakeven": True, "risk_modes": True,
             "daily_limits": True, "news_protection": True, "signal_filters": True,
-            "smart_entry": False, "tp_control": True,
+            "smart_entry": False, "tp_control": True, "group_optimise": False,
         },
     },
     {
@@ -49,7 +50,7 @@ DEFAULT_PLANS = [
             "max_accounts": 10, "max_channels": UNLIMITED, "max_layers": 10,
             "manual_signals": True, "breakeven": True, "risk_modes": True,
             "daily_limits": True, "news_protection": True, "signal_filters": True,
-            "smart_entry": True, "tp_control": True,
+            "smart_entry": True, "tp_control": True, "group_optimise": True,
         },
     },
 ]
@@ -190,6 +191,8 @@ def clean_groups(raw) -> dict:
         c = {}
         if g.get("paused"):
             c["paused"] = True
+        if g.get("optimised") is False or g.get("optimised") == "off":
+            c["optimised"] = False          # optimised copying is on unless the customer turns it off
         if g.get("own"):
             c["own"] = True
             c["lot_mode"] = g.get("lot_mode") if g.get("lot_mode") in LOT_MODES else "fixed"

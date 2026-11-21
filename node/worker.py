@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import trade_logic as tl  # noqa: E402
 
 MAGIC = 770077
-VERSION = "1.3.28"
+VERSION = "1.3.29"
 RECONNECT_AFTER = 120           # seconds MT5 may be off the broker before we log in again ourselves
 SL_WAIT_MIN = 30                # how long a signal without a stop loss waits for the group to post one
 FIRST_START_TIMEOUT = 300_000   # a brand-new MT5 copy compiles its examples and updates itself first
@@ -468,17 +468,24 @@ class Worker:
     GROUP_KEYS = ("lot_mode", "fixed_lot", "risk_percent", "risk_amount", "layers", "tp_target")
 
     def handle_signal(self, sig: dict):
-        """A new signal: this group's own settings (if the customer set any) apply on top of the account's."""
+        """A new signal: this group's own settings (if the customer set any) apply on top of the account's.
+        Optimised groups carry a `rule` (targets, wait for the zone) unless the customer switched it off."""
         groups = self.settings.get("groups") or {}
-        g = groups.get(str(sig.get("group") or "")) or groups.get(f"s{sig.get('source_id')}")
-        if not g:
-            return self._handle_signal(sig)
+        g = groups.get(str(sig.get("group") or "")) or groups.get(f"s{sig.get('source_id')}") or {}
+        rule = sig.get("rule") or {}
+        if rule and g.get("optimised") is False:
+            sig, rule = {**sig, "rule": {}}, {}
         if g.get("paused"):
             if str(sig["id"]) not in self.state["signals"]:
                 self.note(f"signal #{sig['id']} skipped: you paused {sig.get('source') or 'this group'}")
             return
+        over = {k: v for k, v in g.items() if k in self.GROUP_KEYS} if g.get("own") else {}
+        if rule.get("tp_target"):
+            over["tp_target"] = rule["tp_target"]      # optimised copying sets the targets; own size still applies
+        if not over:
+            return self._handle_signal(sig)
         base = self.settings
-        self.settings = {**base, **{k: v for k, v in g.items() if k in self.GROUP_KEYS}}
+        self.settings = {**base, **over}
         try:
             return self._handle_signal(sig)
         finally:
@@ -517,7 +524,12 @@ class Worker:
         sl = sig.get("sl")
         mid = (lo + hi) / 2
         temp_sl = False
-        if not sl:
+        if not sl or ((sig.get("rule") or {}).get("wait_for_zone") and sig.get("instant") and not sig.get("zone_in")):
+            if (sig.get("rule") or {}).get("wait_for_zone") and sig.get("instant") and not sig.get("zone_in"):
+                # this group's quick "BUY GOLD!" pays better entered at the zone it posts next (replay, Nov 2026)
+                self.state["await_sl"][sid] = {"sig": sig, "until": self.clock() + 60 * SL_WAIT_MIN}
+                self.save_state()
+                return self.note(f"signal #{sid} {side}: waiting for the group's zone before entering")
             if sig.get("instant") and s.get("instant_entry", True):
                 temp_sl = True              # get in now; the group's real stop replaces this one
             elif s.get("require_sl", True):
@@ -767,6 +779,9 @@ class Worker:
                 sig["sl"] = upd["value"]
             if upd.get("tps"):
                 sig["tps"] = upd["tps"]
+            if upd.get("zone"):
+                sig["entry_low"], sig["entry_high"] = upd["zone"]
+                sig["zone_in"] = True
             self.save_state()
             if sig.get("sl"):
                 return self.handle_signal(sig)
@@ -825,7 +840,9 @@ class Worker:
         for sid, w in list(self.state["await_sl"].items()):
             if now > w["until"]:
                 del self.state["await_sl"][sid]
-                self.note(f"signal #{sid} skipped: the group didn't post a stop loss within {SL_WAIT_MIN} min")
+                zone = (w["sig"].get("rule") or {}).get("wait_for_zone") and not w["sig"].get("zone_in")
+                self.note(f"signal #{sid} skipped: the group didn't post "
+                          f"{'its zone' if zone else 'a stop loss'} within {SL_WAIT_MIN} min")
                 self.save_state()
         open_tickets = {str(p.ticket) for p in self.our_positions()} | {str(p.identifier) for p in self.our_positions()}
         order_tickets = {str(o.ticket) for o in self.our_orders()}

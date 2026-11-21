@@ -13,8 +13,8 @@ from dataclasses import dataclass, field
 
 GOLD_RE = re.compile(r"\b(xau\s*/?\s*usd\w*|gold|xau)\b")
 OTHER_SYMBOL_RE = re.compile(
-    r"\b(eur|gbp|usd|jpy|aud|nzd|cad|chf){2}\b|\b(btc|eth|nas\s*100|us\s*30|us\s*100|spx|ger\s*40|dax|"
-    r"oil|wti|xag|silver|nasdaq|dow)\w*\b")
+    r"\b(eur|gbp|usd|jpy|aud|nzd|cad|chf){2}\b|\b(btc|eth|nas\s*100|nas|nq|us\s*30|us\s*100|us\s*500|sp\s*500|"
+    r"spx|ger\s*40|dax|uk\s*100|ftse|jp\s*225|nikkei|oil|ukoil|usoil|wti|xti|xbr|crude|xag|silver|nasdaq|dow)\w*\b")
 NUM = r"\d+(?:\.\d+)?"
 
 HIT_EMOJI = "✅✔☑🎯💰🤑🔥💸🥳🎉"

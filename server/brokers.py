@@ -128,3 +128,32 @@ def all_servers(learned: list[str] | tuple = ()) -> list[str]:
             seen.add(_key(srv))
             out.append(srv)
     return out
+
+
+PROP_FIRMS = {"FundingPips", "FTMO", "The5ers", "FundedNext", "E8 Markets", "Alpha Capital", "Blue Guardian",
+              "Funding Traders", "Maven"}
+
+
+def _prefix(server: str) -> str:
+    return _key(re.split(r"[-\s]", server.strip(), maxsplit=1)[0])
+
+
+def choices(learned: list[str] | tuple = ()) -> dict[str, list[str]]:
+    """Broker → servers for the add-account dropdowns. A server that connected on our VPS but isn't in the
+    list joins its broker (matched by the part before the dash), or gets an entry of its own."""
+    out = {k: list(v) for k, v in BROKERS.items()}
+    by_prefix = {}
+    for name, servers in BROKERS.items():
+        by_prefix.setdefault(_key(name), name)
+        for srv in servers:
+            by_prefix.setdefault(_prefix(srv), name)
+    known = {_key(x) for v in out.values() for x in v}
+    for srv in learned:
+        srv = re.sub(r"\s+", " ", str(srv).strip())
+        if not srv or _key(srv) in known:
+            continue
+        name = by_prefix.get(_prefix(srv)) or re.split(r"[-\s]", srv, maxsplit=1)[0]
+        by_prefix.setdefault(_prefix(srv), name)
+        out.setdefault(name, []).append(srv)
+        known.add(_key(srv))
+    return out

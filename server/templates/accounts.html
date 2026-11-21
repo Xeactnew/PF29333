@@ -34,16 +34,8 @@
       <div class="field"><label for="login">MT5 login number</label><input id="login" name="login" type="text" inputmode="numeric" required placeholder="12345678"></div>
       <div class="field"><label for="pw">Password</label><input id="pw" name="password" type="password" required autocomplete="new-password">
         <div class="hint">The main trading password. An investor (read-only) password can't place trades.</div></div>
-      <div class="field"><label for="brk">Broker</label>
-        <select id="brk" data-broker-filter>
-          <option value="">Any broker (type the server below)</option>
-          {% for name in brokers %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
-        </select></div>
-      <div class="field"><label for="srv">Server</label><input id="srv" name="server" type="text" required placeholder="Start typing, e.g. PUPrime-Live" list="servers-all">
-        <div class="hint">Pick from the list or type it exactly as your broker's email or MT5 shows it. Not listed? Type it anyway: our MT5 looks new servers up by itself.</div></div>
+      {{ m.server_picker(broker_choices, prop_firms) }}
       <p class="muted" style="font-size:13px;margin:-4px 0 12px">Using a prop firm account? Check their rules first: some don't allow copy trading or trading from a shared server.</p>
-      <datalist id="servers-all">{% for srv in learned %}<option value="{{ srv }}">{% endfor %}{% for name, servers in brokers.items() %}{% for srv in servers %}<option value="{{ srv }}" label="{{ name }}">{% endfor %}{% endfor %}</datalist>
-      {% for name, servers in brokers.items() %}<datalist id="servers-{{ loop.index }}" data-broker="{{ name }}">{% for srv in servers %}<option value="{{ srv }}">{% endfor %}</datalist>{% endfor %}
       <div class="field"><label for="lbl">Nickname (optional)</label><input id="lbl" name="label" type="text" placeholder="Main account"></div>
       <button class="btn primary" type="submit">Add account</button>
     </form>

@@ -69,3 +69,11 @@ def test_quick_calls_in_more_words():
     for t in ("buys are looking good", "I will buy now if it breaks", "should I buy now?", "Not buying here",
               "dont buy now", "TP1 hit, buys running", "Gold looking bullish", "Buying is risky here?"):
         assert parse_signal(t) is None, t
+
+
+def test_other_markets_are_not_gold():
+    from server.parser import parse_signal
+    for t in ("BUY LIMIT NAS : 27438\nSL: 27205\nTP1: 27630", "NQ BUY 21000-20950 SL 20900 TP 21100",
+              "US500 SELL 6100 SL 6120 TP 6050", "UKOIL buy 70 sl 69 tp 72"):
+        assert parse_signal(t) is None, t
+    assert parse_signal("XAUUSD BUY 4030-4037\nSL 4027\nTP 4047")

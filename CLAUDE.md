@@ -13,6 +13,17 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
   CSS/JS and the favicon/app icons). `tests/test_zz_groups_ux.py::test_icons_follow_the_theme` enforces this.
 - Fx by KD's "risk free" / "move SL to <price>" = each trade's own entry + 15 pips (setting `group_rules`, default
   in `server/db.py` DEFAULT_SETTINGS, editable in Admin → Telegram).
+- House rules per group (`group_rules`, Admin → Telegram) also set `tp_target` (KD and FX_BY_H: TP1) and
+  `wait_for_zone` (KD: a quick "BUY GOLD!" waits for the zone he posts next). Both come from the replay in
+  `tools/backtest/` (README has the findings). A group with tp_target / wait_for_zone shows customers
+  "✦ Optimised copying" (on by default; per account per group `groups[key].optimised = False` turns it off).
+  Optimised TP wins over a customer's own group TP; their own size/layers still apply.
+- "Optimise this group" (plan feature `group_optimise`, Extreme only; others see it locked) stores a request
+  in setting `optimise_requests` and pings the admin bot. Answer in Admin → Telegram → Optimisation
+  requests (not possible + note), or optimise it by replaying it and adding house rules for that chat.
+  New plan features reach existing plans through `db.seed` (missing keys only).
+- Add-account / login forms: Broker → Server dropdowns (`brokers.choices` + `_macros.server_picker`),
+  "isn't listed" opens a typed box; without JavaScript only the typed box shows.
 - Keep the public face generic (no framework names, versions, comments or stack traces in public pages; code served to
   browsers is minified). Don't copy TradeByFocus's look or wording.
 
@@ -46,7 +57,7 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
 - `update_vps.ps1` / `setup_vps.ps1`: install/update on Windows (robocopy; keeps data, accounts, logs, signals, mt5-base).
 
 ## Working on it
-- Tests: `python -m pytest -q` (all must pass; currently 144). Worker tests use `tests/fake_mt5.py`.
+- Tests: `python -m pytest -q` (all must pass; currently 153). Worker tests use `tests/fake_mt5.py`.
 - Before packaging: `python tools/build_assets.py [path-to-esbuild]` (needs esbuild; icons need Chrome + playwright).
 - Version lives in three places: `server/system.py`, `node/worker.py`, `node/node_agent.py` (`VERSION = "x.y.z"`).
 - Release: push to `main`, then the owner uses **Update from GitHub** (Admin → System → Check for updates →

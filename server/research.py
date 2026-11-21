@@ -1,6 +1,6 @@
 """Research data for backtesting the signal groups (read-only; changes nothing about trading).
 
-* Telegram: the full recent history of every ticked VIP group (time, text, reply, last edit) →
+* Telegram: the full recent history of every ticked VIP group (and groups customers asked us to optimise) (time, text, reply, last edit) →
   data/research/messages-<chat>.jsonl
 * Prices: one MT5 worker reads M1 gold candles from its history (mt5.copy_rates_range: reading, never
   trading) and posts them in weekly chunks → data/research/prices-acc<id>.csv
@@ -14,6 +14,7 @@ import asyncio
 import csv
 import json
 import logging
+import re
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -45,7 +46,12 @@ async def export_messages(days: int = DAYS) -> int:
     DIR.mkdir(parents=True, exist_ok=True)
     since = datetime.now(timezone.utc) - timedelta(days=days)
     total = 0
-    for chat in runtime.vip_chats():
+    chats = list(runtime.vip_chats())
+    with SessionLocal() as s:          # groups customers asked us to optimise, if our reader is in them
+        for c in get_setting(s, "optimise_requests") or {}:
+            if re.fullmatch(r"-?\d+", str(c)) and int(c) not in chats:
+                chats.append(int(c))
+    for chat in chats:
         n, path = 0, DIR / f"messages-{chat}.jsonl"
         try:
             title = getattr(await client.get_entity(chat), "title", str(chat))
@@ -65,7 +71,7 @@ async def export_messages(days: int = DAYS) -> int:
             log.warning("research export of %s: %s", chat, e)
         total += n
         log.info("research: %s messages from %s", n, chat)
-    _state["messages"] = f"{total} messages from {len(runtime.vip_chats())} groups, last {days} days"
+    _state["messages"] = f"{total} messages from {len(chats)} groups, last {days} days"
     return total
 
 

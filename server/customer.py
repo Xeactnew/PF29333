@@ -323,7 +323,8 @@ def accounts_page(request: Request, s=Depends(db_session)):
     learned = services.learned_servers(s)
     return render(request, "accounts.html", {"user": user, "accounts": accounts, "max_accounts": max_acc,
                                              "can_add": len(accounts) < max_acc, "free_slots": cap["free"],
-                                             "brokers": brokers.BROKERS, "learned": learned})
+                                             "broker_choices": brokers.choices(learned),
+                                             "prop_firms": brokers.PROP_FIRMS})
 
 
 @router.post("/accounts/add")
@@ -385,14 +386,26 @@ def account_page(account_id: int, request: Request, s=Depends(db_session)):
         g["cfg"] = settings["groups"].get(g["key"], {})
         g["week"] = gstats.get(g["key"], {"signals": 0, "trades": 0, "wins": 0, "pnl": 0.0, "win_rate": 0})
         g["checks"] = group_checks(acc, g)
+        g["opt"] = group_opt(s, g["key"], g["cfg"], feats)
+    from . import brokers
     return render(request, "account.html", {
-        "groups": groups,
+        "groups": groups, "broker_choices": brokers.choices(services.learned_servers(s)),
+        "prop_firms": brokers.PROP_FIRMS,
         "user": user, "acc": acc, "settings": settings,
         "effective": effective_settings(acc.settings, feats), "locked": locked_keys(feats),
         "max_layers": int(feature(feats, "max_layers") or 1), "stats": services.stats(s, [acc.id]),
         "curve": services.equity_curve(s, acc.id), "deals": deals, "sources": sources,
         "followed": set(services.account_source_ids(s, acc.id)), "queue_pos": queue_pos,
         "live": acc.live_state or {}})
+
+
+def group_opt(s, key: str, cfg: dict, plan_features: dict) -> dict:
+    """Optimised copying for one group: what it does, whether it's on, and (for groups we haven't
+    optimised) whether this customer's plan lets them ask us to."""
+    summary = services.optimisation(s, key)
+    return {"summary": summary, "on": bool(summary) and cfg.get("optimised") is not False,
+            "telegram": bool(re.fullmatch(r"-?\d+", key)), "req": services.optimise_request(s, key),
+            "can": bool(feature(plan_features, "group_optimise"))}
 
 
 def group_checks(acc: Account, g: dict) -> list[tuple[bool, str, str]]:
@@ -426,6 +439,8 @@ def user_group_cards(s, accounts) -> list[dict]:
             g["accounts"].append({"acc": a, "cfg": cfg, "ready": all(c[0] for c in checks)})
             if best is None or sum(c[0] for c in checks) > sum(c[0] for c in best):
                 best = checks
+        g["optimised"] = bool(services.optimisation(s, g["key"])) and any(
+            x["cfg"].get("optimised") is not False for x in g["accounts"])
         g["checks"] = best or [(False, "Followed by an account", "No account copies this group")]
         g["ready"] = any(x["ready"] for x in g["accounts"])
         g["paused"] = bool(g["accounts"]) and all(x["cfg"].get("paused") for x in g["accounts"])
@@ -444,6 +459,7 @@ async def account_group(account_id: int, key: str, request: Request, s=Depends(d
         groups.pop(key, None)
     else:
         groups[key] = {"paused": form.get("trading") != "on", "own": form.get("own") == "on",
+                       "optimised": (groups.get(key) or {}).get("optimised", True),
                        **{k: form.get(k) for k in ("lot_mode", "fixed_lot", "risk_percent", "risk_amount",
                                                    "layers", "tp_target")}}
     settings["groups"] = groups
@@ -452,6 +468,52 @@ async def account_group(account_id: int, key: str, request: Request, s=Depends(d
     s.commit()
     flash(request, "Group settings saved. They apply to this group's next signal.")
     return redirect(f"/accounts/{acc.id}#groups")
+
+
+@router.post("/accounts/{account_id}/groups/{key}/optimised")
+async def account_group_optimised(account_id: int, key: str, request: Request, s=Depends(db_session)):
+    """Optimised copying on or off for one group on one account."""
+    user = current_user(request, s)
+    acc = _get_account(s, user, account_id)
+    form = await form_data(request)
+    on = form.get("optimised") == "on"
+    settings = clean_settings(acc.settings)
+    groups = dict(settings["groups"])
+    g = dict(groups.get(key) or {})
+    g["optimised"] = on
+    groups[key] = g
+    settings["groups"] = groups
+    acc.settings = clean_settings(settings)
+    services.log(s, "group_optimised", user.id, f"account {acc.login} group {key}: {'on' if on else 'off'}",
+                 user.username, client_ip(request))
+    s.commit()
+    flash(request, "Optimised copying is on for this group." if on else
+          "Optimised copying is off: this group is copied exactly as posted, with your own settings.")
+    return redirect(f"/accounts/{acc.id}#g-{key}")
+
+
+@router.post("/accounts/{account_id}/groups/{key}/optimise")
+async def account_group_optimise(account_id: int, key: str, request: Request, s=Depends(db_session)):
+    """Extreme: ask us to work out the best way to copy a group we haven't optimised yet."""
+    user = current_user(request, s)
+    acc = _get_account(s, user, account_id)
+    await form_data(request)
+    if not feature(user.plan.features, "group_optimise"):
+        flash(request, "Asking us to optimise a group is part of the Extreme plan.", "err")
+        return redirect("/plan")
+    group = next((g for g in services.signal_groups(s, set(services.account_source_ids(s, acc.id)))
+                  if g["key"] == key), None)
+    if not group or not re.fullmatch(r"-?\d+", key):
+        raise HTTPException(404, "Group not found")
+    if services.optimisation(s, key):
+        flash(request, "This group is already optimised.")
+        return redirect(f"/accounts/{acc.id}#g-{key}")
+    if services.request_optimise(s, user, key, group["title"]):
+        notify.send_admins(f"✦ {user.username} ({user.plan.name}) asked us to optimise {group['title']} ({key}).\n"
+                           f"Admin → Telegram → Optimisation requests.")
+    s.commit()
+    flash(request, "Thanks, we'll look at this group. You'll see the answer on this card.")
+    return redirect(f"/accounts/{acc.id}#g-{key}")
 
 
 @router.post("/accounts/{account_id}/settings")
