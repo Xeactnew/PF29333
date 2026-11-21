@@ -990,13 +990,12 @@ async def system_github_auto(request: Request, s=Depends(db_session)):
     admin = current_admin(request, s)
     form = await form_data(request)
     from .scheduler import UPDATE_MODES
-    mode = form.get("mode") if form.get("mode") in UPDATE_MODES else "ask"
+    mode = form.get("mode") if form.get("mode") in UPDATE_MODES else "auto"
     set_setting(s, "gh_update_mode", mode)
     services.log(s, "github_update_mode", None, mode, admin.username)
     s.commit()
-    flash(request, {"ask": "New versions will be offered in the admin bot; nothing installs until you tap Install.",
-                    "auto": "New versions on GitHub will install by themselves within about 5 minutes.",
-                    "off": "GitHub isn't checked any more. Use “Check for updates” when you want one."}[mode])
+    flash(request, "Updates you've agreed with Claude now install by themselves within about 5 minutes."
+          if mode == "auto" else "GitHub isn't checked any more. Use “Check for updates” when you want one.")
     return redirect("/admin/system#github")
 
 

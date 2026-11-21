@@ -500,22 +500,20 @@ AUTO_MAX_TRIES = 2          # a commit that doesn't install twice is left for a 
 _auto = {"tries": {}, "announced": False}
 
 
-UPDATE_MODES = ("ask", "auto", "off")   # ask = the admin bot offers each new version with an Install button
+UPDATE_MODES = ("auto", "off")   # the owner OKs each change with Claude before it's pushed; a push then goes live
 
 
 def update_mode(s) -> str:
-    m = get_setting(s, "gh_update_mode")
-    return m if m in UPDATE_MODES else "ask"
+    return "off" if get_setting(s, "gh_update_mode") == "off" else "auto"
 
 
 def github_auto_tick(now: float | None = None) -> str:
-    """A new commit on main: offer it in the admin bot (ask, the default) or install it when safe (auto).
+    """A new commit on main (the owner already said yes to it with Claude): install it when safe.
     Returns what it did (for the log and tests)."""
     from . import github_update as gh
     now = now or time.time()
     with SessionLocal() as s:
         mode = update_mode(s)
-        offered = get_setting(s, "gh_offered") or ""
         recent_signal = s.scalar(select(func.max(Signal.created_at)))
     if mode == "off" or not gh.token_hint():
         return "off"
@@ -523,24 +521,12 @@ def github_auto_tick(now: float | None = None) -> str:
         return "not windows"
     if now - _website_started < AUTO_START_GRACE:
         return "just started"
-    if mode == "auto" and recent_signal and (utcnow() - recent_signal).total_seconds() < AUTO_QUIET:
+    if recent_signal and (utcnow() - recent_signal).total_seconds() < AUTO_QUIET:
         return "signal just in"
     c = gh.check()
     if not c["new"]:
         return "up to date"
     ver = f"v{c['version']} " if c["version"] else ""
-    if mode == "ask":
-        if offered == c["sha"]:
-            return "waiting for ok"
-        notify.send_admins(
-            f"⬆️ New version ready: {ver}(commit {c['short']})\n“{c['message']}”\n\n"
-            "Install it? The database is backed up first and open trades stay safe. "
-            "Nothing installs until you tap Install.",
-            buttons=[[("⬆️ Install now", f"gh:go:{c['sha'][:12]}"), ("Not now", "gh:later")]])
-        with SessionLocal() as s:
-            set_setting(s, "gh_offered", c["sha"])
-            s.commit()
-        return "asked"
     tries = _auto["tries"].get(c["sha"], 0)
     if tries >= AUTO_MAX_TRIES:
         return "gave up"
@@ -582,7 +568,7 @@ async def run_github_auto() -> None:
     while True:
         try:
             did = await asyncio.to_thread(github_auto_tick)
-            if did not in ("off", "up to date", "not windows", "just started", "waiting for ok"):
+            if did not in ("off", "up to date", "not windows", "just started"):
                 log.info("github auto-update: %s", did)
         except Exception as e:  # noqa: BLE001
             log.warning("github auto-update: %s", e)

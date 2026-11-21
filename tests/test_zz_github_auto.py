@@ -10,7 +10,6 @@ from server.db import SessionLocal, Signal, main_source, set_setting, utcnow
 def _setup(monkeypatch, new=True, auto=True, mode=None):
     with SessionLocal() as s:
         set_setting(s, "gh_update_mode", mode or ("auto" if auto else "off"))
-        set_setting(s, "gh_offered", "")
         s.commit()
     installed, sent = [], []
     monkeypatch.setattr(gh, "token_hint", lambda: "WXYZ")
@@ -73,18 +72,11 @@ def test_announces_once_after_update(browser, monkeypatch):
 
 
 
-def test_ask_mode_offers_once_and_never_installs_by_itself(browser, monkeypatch):
-    installed, sent = _setup(monkeypatch, mode="ask")
-    _quiet_signals()
-    assert scheduler.github_auto_tick() == "asked"
-    text, buttons = sent[-1]
-    assert "Install it?" in text and buttons[0][0][1].startswith("gh:go:bbbbbbbbbbbb") and buttons[0][1][1] == "gh:later"
-    assert scheduler.github_auto_tick() == "waiting for ok" and len(sent) == 1
-    assert not installed
-
-
-def test_ask_is_the_default(browser):
+def test_auto_is_the_default_and_old_ask_setting_means_auto(browser):
     with SessionLocal() as s:
         set_setting(s, "gh_update_mode", None)
         s.commit()
-        assert scheduler.update_mode(s) == "ask"
+        assert scheduler.update_mode(s) == "auto"
+        set_setting(s, "gh_update_mode", "ask")
+        s.commit()
+        assert scheduler.update_mode(s) == "auto"

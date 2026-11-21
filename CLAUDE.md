@@ -43,7 +43,7 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
 - `update_vps.ps1` / `setup_vps.ps1`: install/update on Windows (robocopy; keeps data, accounts, logs, signals, mt5-base).
 
 ## Working on it
-- Tests: `python -m pytest -q` (all must pass; currently 143). Worker tests use `tests/fake_mt5.py`.
+- Tests: `python -m pytest -q` (all must pass; currently 142). Worker tests use `tests/fake_mt5.py`.
 - Before packaging: `python tools/build_assets.py [path-to-esbuild]` (needs esbuild; icons need Chrome + playwright).
 - Version lives in three places: `server/system.py`, `node/worker.py`, `node/node_agent.py` (`VERSION = "x.y.z"`).
 - Release: push to `main`, then the owner uses **Update from GitHub** (Admin → System → Check for updates →
@@ -51,11 +51,10 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
   Telegram admin bot and tap Install (or Admin → System → upload). The node self-updates from the website.
 
 ## Releasing
-- **Ask the owner before pushing to `main`**: the VPS picks up every push.
-- The VPS checks GitHub `main` every 5 minutes (needs the owner's read-only token in Admin → System). Setting
-  `gh_update_mode` (Admin → System): **ask** (default: the admin bot offers each new commit once with
-  "Install now" / "Not now" buttons; nothing installs until tapped), **auto** (installs by itself, waiting 10 min
-  after a website start and 3 min after a new signal, max two tries per commit), or **off**.
+- **Ask the owner in chat before pushing to `main`, and only push after they say yes.** That yes is the approval:
+  the VPS checks `main` every 5 minutes and installs new commits by itself (needs the owner's read-only token in
+  Admin → System). It waits 10 min after a website start and 3 min after a new signal, tries a commit at most
+  twice, and the admin bot says when it's installing and when it's done. Setting `gh_update_mode`: auto (default) / off.
 - Only push to main when the whole test suite passes.
 
 ## On the VPS (C:\PipsFarmer)
