@@ -11,7 +11,7 @@
 {% macro status(acc) -%}
 {% set labels = {"online": "Online", "waiting": "Waiting for a slot", "starting": "Connecting", "error": "Problem",
                  "stopped": "Stopped", "new": "New"} %}
-<span class="pill {{ acc.conn_status }}">{{ labels.get(acc.conn_status, acc.conn_status) }}</span>
+{% if acc.conn_status == "error" and (acc.live_state or {}).get("unknown_server") %}<span class="pill starting">Setting up</span>{% else %}<span class="pill {{ acc.conn_status }}">{{ labels.get(acc.conn_status, acc.conn_status) }}</span>{% endif %}
 {%- endmacro %}
 
 {% macro user_status(u) -%}

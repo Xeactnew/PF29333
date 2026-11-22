@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import PlainTextResponse, Response
 from sqlalchemy import select
 
-from . import customer_alerts, notify, runtime, security, services, system
+from . import brokers, customer_alerts, notify, runtime, security, services, system
 from .db import Account, Deal, NewsEvent, Node, Snapshot, utcnow
 from .web import db_session
 
@@ -44,7 +44,8 @@ async def heartbeat(request: Request, s=Depends(db_session), authorization: str 
     node.info = {k: body.get(k) for k in ("version", "hostname", "running", "cpu", "ram", "disk_free_gb",
                                           "node_hash", "autologon", "reboot_pending", "uptime_h", "elevated",
                                           "last_result", "log_tail", "ram_total_gb", "folders_locked",
-                                          "template_has_login", "base_ready", "servers_size")}
+                                          "template_has_login", "base_ready", "servers_size",
+                                          "broker_searches", "finder_busy")}
     if was_offline:
         services.assign_accounts(s)
     s.commit()
@@ -55,7 +56,10 @@ async def heartbeat(request: Request, s=Depends(db_session), authorization: str 
     return {"node_id": node.id, "name": node.name, "max_slots": node.max_slots,
             "node_hash": pkg_hash, "commands": services.take_node_commands(node.id),
             "servers": _servers_info(),
+            # brokers in the add-account list: the node looks these up ahead of time (broker_finder.py)
+            "broker_names": list(brokers.BROKERS),
             "assignments": [{"account_id": a.id, "login": a.login, "server": a.server,
+                             "broker": brokers.broker_of(a.server) or a.broker or "",
                              "password": security.decrypt(a.password_enc)} for a in accounts]}
 
 

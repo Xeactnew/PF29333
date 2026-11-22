@@ -231,9 +231,11 @@ def _warn_node(n, key: str, text: str, every_h: float = 24) -> None:
         notify.send_admins(text)
 
 
-BROKER_HINT = ("\n   ↳ MT5 doesn't know this broker yet. If the server name is right: on that VPS double-click "
-               "'PipsFarmer - add a broker' on the desktop, File → Open an Account, search the broker, Cancel, "
-               "close MT5. Every VPS learns it within a few minutes and the account connects by itself.")
+BROKER_HINT = ("\n   ↳ MT5 doesn't know this broker yet. The VPS is looking it up by itself (broker finder); "
+               "you'll get another message if it can't find it.")
+BROKER_MANUAL = ("If the server name is right, do it by hand once: on that VPS double-click 'PipsFarmer - add a "
+                 "broker' on the desktop, File → Open an Account, search the broker, Cancel, close MT5. Every VPS "
+                 "learns it within a few minutes and the account connects by itself.")
 
 
 def watch_tick(now: datetime | None = None) -> None:
@@ -254,6 +256,16 @@ def watch_tick(now: datetime | None = None) -> None:
                                + "\n".join(lines))
             _alerts["acc_err"] |= {a.id for a in new}
         _alerts["acc_err"] &= {a.id for a in errs}
+
+        # brokers a VPS couldn't look up by itself
+        for n in s.scalars(select(Node)):
+            for b in (n.info or {}).get("broker_searches") or []:
+                if b.get("gave_up"):
+                    _warn_node(n, f"broker:{b.get('server')}",
+                               f"🔎 {n.name} couldn't find the broker server \"{b.get('server')}\" by itself "
+                               f"(searched MetaQuotes for {b.get('query')!r}"
+                               + ("" if b.get("searched") else f"; the MT5 window step failed: {b.get('detail', '')[:160]}")
+                               + f").\n{BROKER_MANUAL}")
 
         # workers that stopped reporting while their VPS is online
         nodes = {n.id: n for n in s.scalars(select(Node))}

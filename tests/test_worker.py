@@ -272,47 +272,40 @@ def test_unknown_server_falls_back_to_terminal_login(tmp_path, monkeypatch):
     assert not (term.parent / "Config" / "pf_login.ini").exists()      # password file removed
 
 
-class TimeoutThenAttachMT5(FakeMT5):
-    """A broker this VPS has never used: the direct login can't reach the server and times out
-    (-10005), but starting the terminal with a login file makes MT5 look the server up and connect."""
+class UnknownBrokerMT5(FakeMT5):
+    """A broker this VPS has never used: the direct login times out (-10005) until the shared broker
+    list knows the server, then it connects."""
     def __init__(self, **kw):
         super().__init__(**kw)
-        self.launched = []
+        self.known = False
 
     def initialize(self, **kw):
         self.init_kw = kw
-        if "login" in kw:
-            return False                 # no address for the server yet → the direct login times out
-        if not self.launched:
-            return False
-        self.login = 123
-        return True
+        self.login = kw.get("login", 123)
+        return self.known
 
     def last_error(self):
-        return (-10005, "IPC timeout")
+        return (1, "Success") if self.known else (-10005, "IPC timeout")
 
 
-def test_unknown_broker_timeout_triggers_server_lookup(tmp_path, monkeypatch):
-    # The real symptom of a brand-new broker: a -10005 timeout with no network attempt. It must
-    # fall back to MT5's own login so the account connects on the first setup, not sit "starting".
-    import worker as wmod
-    monkeypatch.setattr(wmod.time, "sleep", lambda s: None)
-    mt5 = TimeoutThenAttachMT5()
+def test_unknown_broker_asks_the_node_to_look_it_up(tmp_path, monkeypatch):
+    # MT5 has no address for a brand-new broker: the worker leaves a note for the node's broker finder
+    # (it doesn't restart the terminal with a login file, which can't find an unknown broker), shows the
+    # customer a calm message, and removes the note once it connects.
+    mt5 = UnknownBrokerMT5()
     term = tmp_path / "acc" / "terminal64.exe"
     term.parent.mkdir()
     term.write_bytes(b"x")
     w = Worker(mt5, FakeAPI(), 1, 123, "pw", "BrandNew-Demo", str(term), tmp_path / "s.json")
-    monkeypatch.setattr(w, "server_never_tried", lambda: True)   # journal shows no network attempt
-    seen = {}
-
-    def launch(args):
-        mt5.launched.append(args)
-        seen["ini"] = Path(args[2].split(":", 1)[1]).read_bytes().decode("utf-16")
-    monkeypatch.setattr(w, "launch_terminal", launch)
-    monkeypatch.setattr(w, "stop_terminal", lambda: None)
-    assert w.connect() and w.status == "online"
-    assert "Server=BrandNew-Demo" in seen["ini"]
-    assert not w.unknown_server              # resolved, so the customer isn't shown a "can't find server" error
+    monkeypatch.setattr(w, "server_never_tried", lambda: True)    # journal: MT5 never touched the network
+    calls = []
+    monkeypatch.setattr(w, "login_via_config", lambda: calls.append(1) or False)
+    marker = term.parent / "Config" / "pf_find_server.txt"
+    assert not w.connect() and w.unknown_server and not calls
+    assert marker.read_text() == "BrandNew-Demo"
+    assert "looking up the server" in w.error and "BrandNew-Demo" in w.error
+    mt5.known = True                                               # the broker finder taught MT5 the server
+    assert w.connect() and w.status == "online" and not marker.exists() and not w.unknown_server
 
 
 def test_network_timeout_does_not_trigger_lookup(tmp_path, monkeypatch):

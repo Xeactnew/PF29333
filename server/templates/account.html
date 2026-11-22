@@ -34,6 +34,8 @@
 <div class="flash warn">All our servers are full right now. You're number {{ queue_pos }} in the queue, and this account will connect by itself as soon as a slot frees up. Your settings below are saved and ready.</div>
 {% elif acc.conn_status == "starting" %}
 <div class="flash ok">Starting MT5 and logging in. This usually takes under a minute. Refresh to check.</div>
+{% elif acc.conn_status == "error" and live.unknown_server %}
+<div class="flash ok"><b>Setting up your broker.</b> This is the first account on this broker, so we're looking its server up for you. It usually takes a few minutes and then connects by itself. If it hasn't after 20 minutes, <a href="#login">check the server name</a> is exactly as your broker shows it.</div>
 {% elif acc.conn_status == "error" %}
 <div class="flash err"><b>This account can't log in.</b> {{ acc.conn_error.rstrip('.') }}. <a href="#login">Fix the password or server</a></div>
 {% endif %}

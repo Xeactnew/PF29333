@@ -5,7 +5,8 @@ customers' MT5 accounts, which run as portable MT5 terminals on our own Windows 
 node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, Cloudflare Access on /admin).
 
 ## House rules (from the owner, always apply)
-- **MT5 is view-only for Claude.** Read logs/history; never place, modify or close trades, never control a terminal.
+- **MT5 and trades:** never place, modify or close trades without the owner's OK. Using a terminal's windows for
+  non-trading work (broker search, logs, history, settings) is fine (owner, 22 Nov 2026).
 - Never type, store or ask for passwords, API keys, bot/tunnel tokens or MT5 passwords. The owner enters them on the website.
 - Don't change the owner's other trading-bot projects; only use them as templates.
 - **Theme colours and icons move together.** Colours live in `server/brand.py` (THEME) *and* the `:root` block of
@@ -33,14 +34,19 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
   (`copy_rates_from_pos`), no_hedging (off/close_old/skip_new), tp_target "partials" + tp_partials +
   runner_pct/runner_trail_pips (`manage_partials`), hand_sl/be/trail_pips (`manage_hand_trades`, gold only).
   Plan gating: limits need `daily_limits`, hedging needs `signal_filters`, partials/runner need `tp_control`.
-- **Any-broker first connect (1.3.34):** a broker never used on this VPS has no server address in the
-  shared `servers.dat`, so the worker's direct `mt5.initialize(login,...)` times out (**-10005**,
-  `server_never_tried()` true). `connect()` now falls back to `login_via_config()` on that symptom (not
-  only -6/-2/-10003), which launches MT5 with a `/config:` login file so MT5 looks the server up in
-  MetaQuotes' directory (like File > Login) and downloads its addresses — connecting on first setup.
-  Unknown-server retries every 5 min (no auth attempted, no lock risk); -6 stays gated at 30 min. The
-  node's `harvest_servers` (every 2 min) then copies the learned list to the shared library, and
-  `sync_servers` shares it across VPSes, so later accounts of that broker connect directly.
+- **Broker finder (1.3.35, replaces 1.3.34's wrong idea):** MT5 only connects to servers in `Config\servers.dat`,
+  and a new broker's servers are only added by File > Open an Account's company search (no command line, MQL5
+  or Python way; a `/config:` login file does NOT do it, proven on the VPS). Symptom: -10005 timeout +
+  `server_never_tried()`. The worker then writes `Config\pf_find_server.txt` (server name) and shows
+  "We're looking up the server"; the node (`node/broker_finder.py`, `finder_tick`) runs a spare MT5 with
+  **no account** in `C:\PipsFarmer\broker-finder`, types the server / broker / name-before-dash into the search
+  (plain window messages via ctypes, works with the screen locked; never logs in, never trades), and keeps it
+  if servers.dat grew. `harvest_servers` → shared library → `sync_servers` to other VPSes; the worker's loop
+  picks the bigger list up and connects. Retry 10 min per name, gives up for a day after all names (admin
+  alert with manual steps, customer alert after 25 min). When idle it pre-fetches every broker on the
+  website's list (`broker_names`), 3 min apart. Each run saves `broker-finder\finder_dialog.txt` (window dump)
+  for fixing the automation if MT5's window changes. State: `broker-finder.json`. Setting `broker_finder` in
+  node config (on by default on Windows).
 - Add-account / login forms: Broker → Server dropdowns (`brokers.choices` + `_macros.server_picker`),
   "isn't listed" opens a typed box; without JavaScript only the typed box shows.
 - **Plain words for customers** (owner: "easy enough for a 10 year old"): say "signal" not "call", "Ready" not
@@ -93,7 +99,7 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
 - `update_vps.ps1` / `setup_vps.ps1`: install/update on Windows (robocopy; keeps data, accounts, logs, signals, mt5-base).
 
 ## Working on it
-- Tests: `python -m pytest -q` (all must pass; currently 179). Worker tests use `tests/fake_mt5.py`.
+- Tests: `python -m pytest -q` (all must pass; currently 196). Worker tests use `tests/fake_mt5.py`.
 - Before packaging: `python tools/build_assets.py [path-to-esbuild]` (needs esbuild; icons need Chrome + playwright).
 - Version lives in three places: `server/system.py`, `node/worker.py`, `node/node_agent.py` (`VERSION = "x.y.z"`).
 - Release: push to `main`, then the owner uses **Update from GitHub** (Admin → System → Check for updates →

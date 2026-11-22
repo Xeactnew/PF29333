@@ -20,7 +20,7 @@ from pathlib import Path
 
 from . import config
 
-VERSION = "1.3.34"
+VERSION = "1.3.35"
 ROOT = config.ROOT
 IS_WINDOWS = os.name == "nt"
 BACKUP_DIR = ROOT / "backups"
@@ -31,7 +31,8 @@ SERVERS_FILE = ROOT / "data" / "mt5-servers.dat"   # broker list shared by every
 log = logging.getLogger("pf.system")
 
 # files every VPS node runs; nodes compare this hash with their own and update themselves
-NODE_FILES = ("__init__.py", "node_agent.py", "worker.py", "trade_logic.py", "requirements-node.txt")
+NODE_FILES = ("__init__.py", "node_agent.py", "worker.py", "trade_logic.py", "broker_finder.py",
+              "requirements-node.txt")
 
 
 # ------------------------------------------------------------ logs

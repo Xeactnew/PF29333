@@ -30,7 +30,7 @@ HOURLY_CAP = 40               # most alerts one customer gets in an hour; the re
 FRESH = timedelta(minutes=20)  # only deals this recent alert (a new account's history doesn't)
 GIVE_UP = timedelta(hours=6)   # an alert still unsent after this is stale
 MAX_TRIES = 6
-PROBLEM_DELAY = {"password": 0, "algo": 120, "mt5": 300}   # seconds a problem must last before we say so
+PROBLEM_DELAY = {"password": 0, "algo": 120, "mt5": 300, "broker": 1500}   # broker: the VPS looks it up first   # seconds a problem must last before we say so
 SKIP_QUIET = ("same trade as signal", "same idea as signal")  # the same call twice isn't news
 
 _codes: dict[str, tuple[int, float]] = {}     # bot /start code -> (user_id, expires)
@@ -287,6 +287,8 @@ SKIP_RE = re.compile(r"signal #(\d+) skipped: (.+)$")
 def _problem(rep: dict) -> str | None:
     status, error = rep.get("status"), str(rep.get("error") or "")
     if status == "error":
+        if rep.get("unknown_server"):
+            return "broker"
         return "password" if "wrong login, password" in error else "mt5"
     if status == "starting" and "lost connection" in error:
         return "mt5"
@@ -301,6 +303,8 @@ PROBLEM_TEXT = {
     "mt5": "⚠️ {acc}: MT5 isn't connected to your broker right now, so no new trades are being placed. "
            "We keep trying; open trades keep their stop and targets.",
     "algo": "⚠️ {acc}: Algo Trading is switched off in MT5, so trades can't be placed. We're switching it back on.",
+    "broker": "🔎 {acc}: we still can't find your broker's server. Check the server name on the account's page "
+              "is exactly as your broker shows it (for example PUPrime-Live); it connects by itself once it's right.",
 }
 
 

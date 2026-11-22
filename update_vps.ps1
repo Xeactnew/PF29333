@@ -47,7 +47,7 @@ Get-ChildItem "$Dest\backups\*.db" | Sort-Object LastWriteTime -Descending | Sel
 
 Write-Host "==> Copying new files" -ForegroundColor Yellow
 robocopy $PSScriptRoot $Dest /E /XF .env node.json start_server.bat start_node.bat BACKUP-your-keys.env.txt .commit `
-    /XD data accounts backups updates logs bin signals mt5-base mt5-base-building __pycache__ .pytest_cache /NFL /NDL /NJH /NJS /NP | Out-Null
+    /XD data accounts backups updates logs bin signals mt5-base mt5-base-building broker-finder __pycache__ .pytest_cache /NFL /NDL /NJH /NJS /NP | Out-Null
 
 # which GitHub commit is installed now (Admin -> System compares it with the latest); unknown after a zip update
 New-Item -ItemType Directory -Force -Path "$Dest\data" | Out-Null

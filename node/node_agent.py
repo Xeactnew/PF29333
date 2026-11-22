@@ -22,8 +22,9 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-VERSION = "1.3.34"
-NODE_FILES = ("__init__.py", "node_agent.py", "worker.py", "trade_logic.py", "requirements-node.txt")
+VERSION = "1.3.35"
+NODE_FILES = ("__init__.py", "node_agent.py", "worker.py", "trade_logic.py", "broker_finder.py",
+              "requirements-node.txt")
 RESTART_CODE = 0          # start_node.bat starts us again 10 s after we exit
 
 try:
@@ -203,6 +204,15 @@ class Node:
         if not (self.template / "terminal64.exe").exists():
             raise SystemExit(f"terminal64.exe not found in {self.template}. Set mt5_template in node.json "
                              f"to your MetaTrader 5 install folder.")
+        # a spare MT5 with no account that looks up brokers this VPS doesn't know yet (see broker_finder.py).
+        # Optional: a node that updated itself from an older version gets the file on its next update.
+        try:
+            import broker_finder
+            self.finder = broker_finder.BrokerFinder(self.accounts_dir.parent / "broker-finder", self.copy_source,
+                                                     servers_file(self.base))
+        except ImportError:
+            self.finder = None
+        self.finder_on = cfg.get("broker_finder", os.name == "nt") and self.finder is not None
 
     # ------------------------------------------------------------ server
     def heartbeat(self) -> dict:
@@ -212,7 +222,9 @@ class Node:
                 "log_tail": self.log_tail(), "folders_locked": self.locked,
                 "template_has_login": any((self.template / "Config" / n).exists() for n in ("accounts.dat", "accounts.ini")),
                 "base_ready": self.base_ready(), "servers_size": file_size(self.library),
-                "servers_sha": self.library_sha()}
+                "servers_sha": self.library_sha(),
+                "broker_searches": self.finder.report() if self.finder else [],
+                "finder_busy": bool(self.finder and self.finder.busy)}
         if psutil:
             info["cpu"] = round(psutil.cpu_percent(), 0)
             vm = psutil.virtual_memory()
@@ -483,7 +495,7 @@ class Node:
     def harvest_servers(self) -> bool:
         """When any MT5 on this VPS has learned more brokers than the shared list, keep its list."""
         best = file_size(self.library)
-        candidates = [servers_file(self.template)]
+        candidates = [servers_file(self.template)] + ([servers_file(self.finder.folder)] if self.finder else [])
         if self.accounts_dir.exists():
             candidates += [servers_file(f) for f in self.accounts_dir.iterdir() if f.is_dir() and f.name.isdigit()]
         grew = False
@@ -537,6 +549,35 @@ class Node:
             self.sync_servers(web)
         except Exception as e:  # noqa: BLE001
             log.warning("broker list sync: %s", e)
+
+    # ------------------------------------------------------------ brokers this VPS doesn't know yet
+    def finder_tick(self, assignments: list[dict], broker_names: list[str] | None) -> None:
+        """Workers that can't find their broker's server leave a note in their MT5 folder; look those
+        brokers up (one at a time, in the spare MT5). When nothing is waiting, quietly look up the brokers
+        in the website's list so customers on them connect straight away."""
+        if not self.finder_on:
+            return
+        import broker_finder
+        requests, waiting = {}, set()
+        for a in assignments:
+            server = broker_finder.marker_server(self.account_folder(a["account_id"]))
+            if server:
+                requests[server] = a.get("broker") or ""
+                waiting.add(server)
+        for server, e in list(self.finder.state["servers"].items()):
+            if e.get("tries") and server not in waiting and any(a["server"] == server for a in assignments):
+                self.finder.solved(server)                      # its account connected
+        if self.finder.busy:
+            return
+        job = self.finder.wanted(requests)
+        if job:
+            server, query = job
+            log.info("looking up broker for %s (searching %r)", server, query)
+            self.finder.start(lambda: self.finder.find_server(server, query, after=self.harvest_servers))
+            return
+        name = self.finder.next_prefetch(broker_names or [])
+        if name and self.base_ready():
+            self.finder.start(lambda: self.finder.prefetch(name, after=self.harvest_servers))
 
     # ------------------------------------------------------------ workers
     def start_worker(self, a: dict, creds: str) -> None:
@@ -641,6 +682,10 @@ class Node:
                 if self.exit_code is None:
                     self.reconcile(resp.get("assignments", []))
                     self.servers_tick(resp.get("servers"))
+                    try:
+                        self.finder_tick(resp.get("assignments", []), resp.get("broker_names"))
+                    except Exception:  # noqa: BLE001
+                        log.exception("broker finder")
             except urllib.error.HTTPError as e:
                 log.error("server said %s: %s", e.code, "check node_token in node.json" if e.code == 401 else e.reason)
             except Exception as e:  # noqa: BLE001
