@@ -33,6 +33,14 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
   (`copy_rates_from_pos`), no_hedging (off/close_old/skip_new), tp_target "partials" + tp_partials +
   runner_pct/runner_trail_pips (`manage_partials`), hand_sl/be/trail_pips (`manage_hand_trades`, gold only).
   Plan gating: limits need `daily_limits`, hedging needs `signal_filters`, partials/runner need `tp_control`.
+- **Any-broker first connect (1.3.34):** a broker never used on this VPS has no server address in the
+  shared `servers.dat`, so the worker's direct `mt5.initialize(login,...)` times out (**-10005**,
+  `server_never_tried()` true). `connect()` now falls back to `login_via_config()` on that symptom (not
+  only -6/-2/-10003), which launches MT5 with a `/config:` login file so MT5 looks the server up in
+  MetaQuotes' directory (like File > Login) and downloads its addresses — connecting on first setup.
+  Unknown-server retries every 5 min (no auth attempted, no lock risk); -6 stays gated at 30 min. The
+  node's `harvest_servers` (every 2 min) then copies the learned list to the shared library, and
+  `sync_servers` shares it across VPSes, so later accounts of that broker connect directly.
 - Add-account / login forms: Broker → Server dropdowns (`brokers.choices` + `_macros.server_picker`),
   "isn't listed" opens a typed box; without JavaScript only the typed box shows.
 - **Plain words for customers** (owner: "easy enough for a 10 year old"): say "signal" not "call", "Ready" not
@@ -85,7 +93,7 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
 - `update_vps.ps1` / `setup_vps.ps1`: install/update on Windows (robocopy; keeps data, accounts, logs, signals, mt5-base).
 
 ## Working on it
-- Tests: `python -m pytest -q` (all must pass; currently 177). Worker tests use `tests/fake_mt5.py`.
+- Tests: `python -m pytest -q` (all must pass; currently 179). Worker tests use `tests/fake_mt5.py`.
 - Before packaging: `python tools/build_assets.py [path-to-esbuild]` (needs esbuild; icons need Chrome + playwright).
 - Version lives in three places: `server/system.py`, `node/worker.py`, `node/node_agent.py` (`VERSION = "x.y.z"`).
 - Release: push to `main`, then the owner uses **Update from GitHub** (Admin → System → Check for updates →

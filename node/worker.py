@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import trade_logic as tl  # noqa: E402
 
 MAGIC = 770077
-VERSION = "1.3.33"
+VERSION = "1.3.34"
 RECONNECT_AFTER = 120           # seconds MT5 may be off the broker before we log in again ourselves
 SL_WAIT_MIN = 30                # how long a signal without a stop loss waits for the group to post one
 FIRST_START_TIMEOUT = 300_000   # a brand-new MT5 copy compiles its examples and updates itself first
@@ -111,14 +111,21 @@ class Worker:
         if self.terminal:
             kw.update(path=self.terminal, portable=True)
         ok = mt5.initialize(**kw)
-        if not ok and self.terminal and self.clock() - self.config_login_at > 1800:
+        if not ok and self.terminal:
             code, msg = mt5.last_error()
-            if code in (-6, -2, -10003):
-                # MT5 may not know this broker's server yet. Starting the terminal with a login
-                # file makes it look the server up in MetaQuotes' broker list, like typing it
-                # into File > Login. Only tried every 30 min so a wrong password can't lock the account.
+            # A broker nobody on this VPS has used yet: MT5 has no address for its server, so the
+            # direct login can't reach it and times out (-10005) without ever touching the network.
+            # That's the case to look up — not a plain -6, which is usually a wrong password.
+            unknown = code == -10005 and self.server_never_tried()
+            # Starting the terminal with a login file makes MT5 look the server up in MetaQuotes'
+            # broker list, exactly like typing it into File > Login, which downloads the address list
+            # for ANY broker so the account connects on the first go. An unknown server hasn't tried a
+            # password yet, so there's no lock risk and we can retry it soon; a plain -6/-2/-10003 is
+            # gated to every 30 min so a wrong password can't lock the account.
+            cooldown = 300 if unknown else 1800
+            if (unknown or code in (-6, -2, -10003)) and self.clock() - self.config_login_at > cooldown:
                 self.config_login_at = self.clock()
-                self.note(f"login failed ({code}), trying MT5's own login to look up server {self.server}")
+                self.note(f"MT5 doesn't know {self.server} yet — using MT5's own login to look it up")
                 ok = self.login_via_config()
         if not ok:
             code, msg = mt5.last_error()
