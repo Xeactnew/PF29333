@@ -35,36 +35,35 @@
     <p>Logged in{% if st.main_name %} as <b>{{ st.main_name }}</b>{% endif %}.</p>
     <form method="post" action="/admin/telegram/main/logout">{{ m.csrf_field(csrf) }}
       <button class="btn small danger" data-confirm="Disconnect the reader? VIP signals stop copying.">Disconnect</button></form>
-  {% elif pending %}
-    <form method="post" action="/admin/telegram/main/code">
-      {{ m.csrf_field(csrf) }}
-      <p class="muted">Telegram sent a code to {{ pending }} (in the Telegram app, from "Telegram").</p>
-      <div class="fields">
-        <div class="field"><label for="cc">Code</label><input id="cc" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" required></div>
-        <div class="field"><label for="cp">2-step password (if you have one)</label><input id="cp" name="password" type="password" autocomplete="off"></div>
-      </div>
-      <button class="btn primary" type="submit">Log in</button>
-    </form>
+  {% elif login %}
+    {{ m.tg_code_form(login, csrf, "/admin/telegram/main/code", "/admin/telegram/main/resend", "/admin/telegram/main/cancel", "Log in") }}
   {% else %}
-    <form method="post" action="/admin/telegram/main/start" class="fields">
-      {{ m.csrf_field(csrf) }}
-      <div class="field"><label for="ph">Phone number of the reader account</label><input id="ph" name="phone" type="tel" placeholder="+447700900123" required></div>
-      <div class="field"><button class="btn primary" type="submit">Send me a code</button></div>
-    </form>
+    {{ m.tg_phone_form("/admin/telegram/main/start", csrf, countries, "Phone number of the reader account") }}
   {% endif %}
   {% endif %}
 
   {% if has_session %}
-  <h3 style="margin-top:20px">VIP group to copy</h3>
+  <h3 style="margin-top:20px" id="vip">VIP groups to copy</h3>
+  <p class="muted">Every channel and group on the reader account is listed (archived ones too). Groups with topics show their topics: tick only the topics with signals (for example "Signals" or "Scalp trades") so chat in other topics is never copied. No topic ticked = the whole group.</p>
+  <p class="muted"><b>Who gets it:</b> groups are private. A customer only sees and copies a group if you tick <b>Everyone</b> here, turn it on for them on their customer page, or they're in that group on their own Telegram.</p>
   {% if dialog_error %}<div class="flash err">Couldn't load your chats: {{ dialog_error }}</div>{% endif %}
   <form method="post" action="/admin/telegram/vip">
     {{ m.csrf_field(csrf) }}
-    <div class="scroll" style="max-height:260px">
-      {% for d in dialogs %}
-      <label class="check"><input type="checkbox" name="chat_id" value="{{ d.id }}" {{ 'checked' if d.id|string in vip }}> <span>{{ d.title }} <small class="mono">{{ d.id }}</small></span></label>
+    <input class="search" type="search" placeholder="Search your chats" data-filter=".vip-pick" aria-label="Search your chats">
+    <div class="scroll" style="max-height:420px">
+      {% for d in dialogs %}{% set cid = d.id|string %}{% set picked = vip_topics.get(cid, {}) %}
+      <div class="vip-pick" data-text="{{ d.title|lower }}">
+        <label class="check"><input type="checkbox" name="chat_id" value="{{ d.id }}" {{ 'checked' if cid in vip }}> <span>{{ d.title }}{% if d.forum %} <small class="tag">Topics</small>{% endif %} <small class="mono">{{ d.id }}</small></span></label>
+        {% if cid in vip %}<label class="check sub"><input type="checkbox" name="open_{{ cid }}" {{ 'checked' if cid in vip_open }}> <span>Everyone gets it</span></label>{% endif %}
+        {% if d.forum and d.topics %}
+        <div class="topic-picks">
+          {% for tp in d.topics %}<label class="check sub"><input type="checkbox" name="topic_{{ cid }}" value="{{ tp.id }}" {{ 'checked' if tp.id|string in picked }}> <span>{{ tp.title }}</span></label>{% endfor %}
+        </div>
+        {% endif %}
+      </div>
       {% else %}<p class="muted">No groups or channels found on this account yet.</p>{% endfor %}
     </div>
-    <button class="btn primary" type="submit">Copy signals from these</button>
+    <button class="btn primary" type="submit">Save</button>
   </form>
 
   <h3 style="margin-top:22px" id="rules">House rules per group</h3>

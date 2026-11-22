@@ -31,6 +31,7 @@ def _customer(browser, name, plan="standard"):
         s.add(acc)
         s.flush()
         services.ensure_default_sources(s, acc)
+        u.vip_grants = [str(KD), str(OTHER)]
         src = main_source(s)
         for chat, title, mid in ((int(KD), "Fx by KD", 1), (int(OTHER), "Some Group", 2)):
             s.add(Signal(source_id=src.id, side="buy", entry_low=4030, entry_high=4037, sl=4027, tps=[4047],

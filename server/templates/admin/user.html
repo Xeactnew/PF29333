@@ -104,6 +104,21 @@ Password: {{ new_login[1] }}</div>
     {% else %}<p class="muted">No renewals yet.</p>{% endfor %}
   </section>
 
+  <section class="panel" id="vip">
+    <h2>VIP groups they get</h2>
+    {% if vip_groups %}
+    <p class="muted" style="font-size:13.5px">VIP groups are private. Tick a group to give it to this customer. Groups open to everyone, or that they're in on their own Telegram, they get anyway.</p>
+    <form method="post" action="/admin/users/{{ user.id }}/vip">
+      {{ m.csrf_field(csrf) }}
+      {% for g in vip_groups %}
+      <label class="check"><input type="checkbox" name="chat" value="{{ g.chat }}" {{ 'checked' if g.granted }}> <span>{{ g.title }}
+        {% if g.open %}<small class="tag">Everyone gets it</small>{% endif %}{% if g.member %}<small class="tag">In their Telegram</small>{% endif %}</span></label>
+      {% endfor %}
+      <button class="btn" type="submit">Save</button>
+    </form>
+    {% else %}<p class="muted">No VIP groups picked yet (Admin → Telegram).</p>{% endif %}
+  </section>
+
   <section class="panel">
     <h2>Extra channels</h2>
     {% for c in channels %}<p style="margin:0 0 6px">{{ c.title }} {% if not c.active %}<small>(off)</small>{% endif %}</p>{% else %}<p class="muted">None.</p>{% endfor %}

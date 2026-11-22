@@ -7,7 +7,7 @@
 {% set copied = c.accounts|length > 0 %}
 <article class="gcard {{ 'is-ready' if live and copied else 'is-held' }}">
   <div class="gtop">
-    <div><h3>{{ src.title }}</h3><small>{{ "Included with every plan" if c.main else "Your Telegram channel" }}</small></div>
+    <div><h3>{{ src.title }}</h3><small>{{ "Included with every plan" if c.main else "Your Telegram channel" }}{% if src.topics %} · only {{ src.topics.values()|join(", ") }}{% endif %}</small></div>
     {% if not copied %}<span class="tag hold">Not copied</span>
     {% elif not live %}<span class="tag hold">Reconnecting</span>
     {% else %}<span class="tag go">Live</span>{% endif %}
@@ -64,26 +64,16 @@
 {% else %}
 
 <details class="sec" id="link" {{ 'open' if not linked }}>
-  <summary><b>1 · Your Telegram</b><small>{% if linked %}Linked as {{ user.tg_name }}{% elif pending_phone %}Waiting for the code{% else %}Not linked yet{% endif %}</small></summary>
+  <summary><b>1 · Your Telegram</b><small>{% if linked %}Linked as {{ user.tg_name }}{% elif login %}Waiting for the code{% else %}Not linked yet{% endif %}</small></summary>
   <div class="sec-body">
   {% if linked %}
     <p class="about">We only read the channels you choose. You'll see "PipsFarmer" under Telegram's active sessions.</p>
     <form method="post" action="/channels/telegram/unlink">{{ m.csrf_field(csrf) }}<button class="btn small" type="submit" data-confirm="Unlink Telegram? Your own channels stop copying.">Unlink {{ user.tg_name }}</button></form>
-  {% elif pending_phone %}
-    <p class="about">Telegram sent a login code to the Telegram app on {{ pending_phone }}.</p>
-    <form method="post" action="/channels/telegram/code" autocomplete="off">
-      {{ m.csrf_field(csrf) }}
-      <div class="field"><label for="code">Code</label><input id="code" name="code" type="text" inputmode="numeric" required autofocus></div>
-      <div class="field"><label for="tgpw">2-step password (only if you set one)</label><input id="tgpw" name="password" type="password"></div>
-      <button class="btn primary" type="submit">Link Telegram</button>
-    </form>
+  {% elif login %}
+    {{ m.tg_code_form(login, csrf, "/channels/telegram/code", "/channels/telegram/resend", "/channels/telegram/cancel") }}
   {% else %}
-    <p class="about">Enter the phone number of your Telegram. Telegram sends you a code; we use the link only to read the signal channels you pick, and you can unlink at any time.</p>
-    <form method="post" action="/channels/telegram/start" autocomplete="off">
-      {{ m.csrf_field(csrf) }}
-      <div class="field"><label for="phone">Phone number</label><input id="phone" name="phone" type="tel" required placeholder="+447700900123"></div>
-      <button class="btn primary" type="submit">Send me a code</button>
-    </form>
+    <p class="about">Telegram sends you a code; we use the link only to read the signal channels you pick, and you can unlink at any time.</p>
+    {{ m.tg_phone_form("/channels/telegram/start", csrf, countries) }}
   {% endif %}
   </div>
 </details>
@@ -103,12 +93,22 @@
   {% if linked and tg_state == "stale" %}<p class="muted" style="font-size:13px">Showing your chats from a moment ago while we check for new ones.</p>{% endif %}
   {% if linked and tg_state in ("ok", "stale") %}
     {% if dialogs %}
+    <input class="search" type="search" placeholder="Search your chats" data-filter=".pick-row" aria-label="Search your chats">
     <div class="scroll-list">
     {% for d in dialogs %}
-      <form method="post" action="/channels/add" class="grow pick">
+      <form method="post" action="/channels/add" class="pick-row" data-text="{{ d.title|lower }}">
         {{ m.csrf_field(csrf) }}<input type="hidden" name="chat_id" value="{{ d.id }}"><input type="hidden" name="title" value="{{ d.title }}">
-        <span>{{ d.title }}</span>
-        <button class="btn small" type="submit" {{ 'disabled' if mine|length >= max_channels }}>Copy</button>
+        <div class="grow pick">
+          <span>{{ d.title }}{% if d.forum %} <small class="muted">· has topics</small>{% endif %}</span>
+          {% if d.included %}<small class="muted">Already copied for you</small>
+          {% else %}<button class="btn small" type="submit" {{ 'disabled' if mine|length >= max_channels }}>Copy</button>{% endif %}
+        </div>
+        {% if d.forum and d.topics and not d.included %}
+        <details class="topic-picks"><summary>Only some topics? Tick them (none ticked = all)</summary>
+          {% for tp in d.topics %}<label class="check sub"><input type="checkbox" name="topic" value="{{ tp.id }}"> <span>{{ tp.title }}</span></label>{% endfor %}
+          {% for tp in d.topics %}<input type="hidden" name="tt_{{ tp.id }}" value="{{ tp.title }}">{% endfor %}
+        </details>
+        {% endif %}
       </form>
     {% endfor %}
     </div>

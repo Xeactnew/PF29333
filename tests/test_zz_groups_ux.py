@@ -78,6 +78,7 @@ def _customer(browser, name="groupie"):
         s.add(acc)
         s.flush()
         services.ensure_default_sources(s, acc)
+        u.vip_grants = ["-1004242"]                      # VIP groups are private: this customer gets this one
         src = main_source(s)
         s.add(Signal(source_id=src.id, side="buy", entry_low=4030, entry_high=4037, sl=4027, tps=[4047],
                      tg_chat_id=-1004242, tg_msg_id=1, channel="Gold Group"))

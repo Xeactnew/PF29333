@@ -196,7 +196,11 @@ def since_summary(s, accounts, src_ids, since: datetime) -> dict:
         r["group"] = (sg.channel or titles.get(sg.source_id) or "a signal") if sg else "Your trade"
     rows = sorted(trades.values(), key=lambda r: r["time"], reverse=True)
     posts = set()
+    user = accounts[0].user if accounts else None
+    keys, main_id = (services.vip_keys(s, user), main_source(s).id) if user else (set(), None)
     for x in s.scalars(select(Signal).where(Signal.created_at >= since, Signal.source_id.in_(src_ids or {-1}))):
+        if user and not services.visible_signal(s, user, x, keys, main_id):
+            continue
         posts.add((x.tg_chat_id, x.tg_msg_id) if x.tg_msg_id else ("id", x.id))
     best = max(rows, key=lambda r: r["pnl"]) if rows else None
     worst = min(rows, key=lambda r: r["pnl"]) if rows else None
@@ -280,16 +284,18 @@ def dashboard(request: Request, s=Depends(db_session)):
     src_ids = {sid for a in accounts for sid in services.account_source_ids(s, a.id)}
     signals = list(s.scalars(select(Signal).where(or_(Signal.source_id.in_(src_ids or [-1]),
                                                       Signal.created_by == f"user:{user.id}"))
-                             .order_by(Signal.id.desc()).limit(6)))
+                             .order_by(Signal.id.desc()).limit(40)))
+    keys, main_id = services.vip_keys(s, user), main_source(s).id
+    signals = [x for x in signals if services.visible_signal(s, user, x, keys, main_id)][:6]
     open_positions = sum(len((a.live_state or {}).get("positions") or []) for a in accounts)
     floating = sum(p.get("profit", 0) for a in accounts for p in ((a.live_state or {}).get("positions") or []))
     away_from, away_to = _away_window(request)
     now = utcnow()
     groups = user_group_cards(s, accounts)
     trades_live = live_trades(s, accounts)
-    in_trade = {t["signal"].tg_chat_id for t in trades_live if t["signal"] and t["signal"].tg_chat_id is not None}
+    in_trade = {services.group_key(t["signal"]) for t in trades_live if t["signal"]}
     for g in groups:
-        g["in_trade"] = g["key"].lstrip("-").isdigit() and int(g["key"]) in in_trade
+        g["in_trade"] = g["key"] in in_trade
     setup = [
         ("Connect an MT5 account", bool(accounts), "/accounts"),
         ("MT5 logged in and online", any(a.conn_status == "online" for a in accounts),
@@ -395,7 +401,7 @@ def account_page(account_id: int, request: Request, s=Depends(db_session)):
             Account.node_id.is_(None), Account.removed.is_(False), Account.waiting_since.is_not(None),
             Account.waiting_since < acc.waiting_since)) or 0)
     followed = set(services.account_source_ids(s, acc.id))
-    groups = services.signal_groups(s, followed)
+    groups = services.signal_groups(s, followed, user)
     gstats = services.group_stats(s, [acc.id], services.period_starts()["week"])
     settings = clean_settings(acc.settings)
     for g in groups:
@@ -421,7 +427,7 @@ def group_opt(s, key: str, cfg: dict, plan_features: dict) -> dict:
     optimised) whether this customer's plan lets them ask us to."""
     summary = services.optimisation(s, key)
     return {"summary": summary, "on": bool(summary) and cfg.get("optimised") is not False,
-            "telegram": bool(re.fullmatch(r"-?\d+", key)), "req": services.optimise_request(s, key),
+            "telegram": bool(re.fullmatch(r"-?\d+(:\d+)?", key)), "req": services.optimise_request(s, key),
             "can": bool(feature(plan_features, "group_optimise"))}
 
 
@@ -439,7 +445,8 @@ def group_checks(acc: Account, g: dict) -> list[tuple[bool, str, str]]:
 def user_group_cards(s, accounts) -> list[dict]:
     """One card per signal group across all of a customer's accounts (overview + signals page)."""
     follows = {a.id: set(services.account_source_ids(s, a.id)) for a in accounts}
-    groups = services.signal_groups(s, set().union(*follows.values()) if follows else set())
+    groups = services.signal_groups(s, set().union(*follows.values()) if follows else set(),
+                                    accounts[0].user if accounts else None)
     ids = [a.id for a in accounts]
     starts = services.period_starts()
     today, week = services.group_stats(s, ids, starts["today"]), services.group_stats(s, ids, starts["week"])
@@ -519,9 +526,9 @@ async def account_group_optimise(account_id: int, key: str, request: Request, s=
     if not feature(user.plan.features, "group_optimise"):
         flash(request, "Asking us to optimise a group is part of the Extreme plan.", "err")
         return redirect("/plan")
-    group = next((g for g in services.signal_groups(s, set(services.account_source_ids(s, acc.id)))
+    group = next((g for g in services.signal_groups(s, set(services.account_source_ids(s, acc.id)), user)
                   if g["key"] == key), None)
-    if not group or not re.fullmatch(r"-?\d+", key):
+    if not group or not re.fullmatch(r"-?\d+(:\d+)?", key):
         raise HTTPException(404, "Group not found")
     if services.optimisation(s, key):
         flash(request, "This group is already optimised.")
@@ -697,6 +704,8 @@ def signals_page(request: Request, s=Depends(db_session), g: str = ""):
     if mine:
         src_ids.add(mine)
     raw = list(s.scalars(select(Signal).where(Signal.source_id.in_(src_ids)).order_by(Signal.id.desc()).limit(150)))
+    keys, main_id = services.vip_keys(s, user), main_source(s).id
+    raw = [x for x in raw if services.visible_signal(s, user, x, keys, main_id)]      # private groups stay private
     # one Telegram post that reached us through two groups lists once
     seen, signals, alias = {}, [], {}
     for x in sorted(raw, key=lambda x: x.id):
@@ -848,11 +857,13 @@ async def channels_page(request: Request, s=Depends(db_session)):
     steps = [("Link your Telegram", "#link", linked),
              ("Pick the channels to copy", "#pick", bool(mine)),
              ("Choose which accounts copy each one", "#copying", any(c["accounts"] for c in cards[1:]))]
+    vip_mine = services.vip_keys(s, user)
+    shown = [{**d, "included": str(d["id"]) in vip_mine} for d in dialogs if d["id"] not in have]
     return render(request, "channels.html", {"user": user, "max_channels": max_ch, "mine": mine,
-                                             "dialogs": [d for d in dialogs if d["id"] not in have],
+                                             "dialogs": shown, "countries": tg.COUNTRY_CODES,
                                              "tg_state": tg_state, "tg_error": tg.dialog_error(user.id),
                                              "reader_on": tg.reader_connected(user.id),
-                                             "pending_phone": tg.pending_login_phone(user.id),
+                                             "login": tg.pending_login(user.id),
                                              "main": main, "cards": cards, "accounts": accounts,
                                              "steps": steps, "linked": linked})
 
@@ -907,16 +918,35 @@ async def tg_start(request: Request, s=Depends(db_session)):
     if not int(feature(user.plan.features, "max_channels") or 0):
         flash(request, "Extra channels come with Pro and Extreme.", "err")
         return redirect("/channels")
-    phone = re.sub(r"[^\d+]", "", str(form.get("phone", "")))
-    if len(phone) < 8:
-        flash(request, "Enter your Telegram phone number with country code, like +447700900123.", "err")
-        return redirect("/channels")
+    phone = tg.normalise_phone(str(form.get("phone", "")), str(form.get("country", "44")))
+    if len(phone) < 9:
+        flash(request, "Enter the phone number of your Telegram.", "err")
+        return redirect("/channels#link")
     try:
         await tg.start_user_login(user.id, phone)
-        flash(request, "Telegram sent you a login code. Enter it below.")
     except Exception as e:  # noqa: BLE001
-        flash(request, f"Telegram didn't accept that number: {e}", "err")
-    return redirect("/channels")
+        flash(request, f"Telegram didn't send a code to {phone}: {e}", "err")
+    return redirect("/channels#link")
+
+
+@router.post("/channels/telegram/resend")
+async def tg_resend(request: Request, s=Depends(db_session)):
+    user = current_user(request, s)
+    await form_data(request)
+    try:
+        await tg.resend_user_code(user.id)
+        flash(request, "Sent the code again.")
+    except Exception as e:  # noqa: BLE001
+        flash(request, f"Couldn't send it again: {e}", "err")
+    return redirect("/channels#link")
+
+
+@router.post("/channels/telegram/cancel")
+async def tg_cancel(request: Request, s=Depends(db_session)):
+    user = current_user(request, s)
+    await form_data(request)
+    await tg.cancel_login(user.id)
+    return redirect("/channels#link")
 
 
 @router.post("/channels/telegram/code")
@@ -934,6 +964,7 @@ async def tg_code(request: Request, s=Depends(db_session)):
     services.log(s, "telegram_linked", user.id, name, user.username)
     s.commit()
     tg.reload_soon()
+    tg.refresh_dialogs_soon(user.id, session_str)       # which groups they're in, for their channel list
     flash(request, f"Telegram linked as {name}. Pick the channels to copy.")
     return redirect("/channels")
 
@@ -968,12 +999,18 @@ async def channels_add(request: Request, s=Depends(db_session)):
     except ValueError:
         raise HTTPException(400)
     title = str(form.get("title", "Channel"))[:128]
+    if str(chat_id) in services.vip_keys(s, user):
+        flash(request, f"{title} is already copied for you.")
+        return redirect("/channels")
+    ticked = form.get("topic", [])
+    ticked = [str(x) for x in (ticked if isinstance(ticked, list) else [ticked]) if str(x).isdigit()]
+    topics = {tid: str(form.get(f"tt_{tid}", f"Topic {tid}"))[:80] for tid in ticked}
     src = s.scalar(select(Source).where(Source.kind == "channel", Source.owner_user_id == user.id,
                                         Source.tg_chat_id == chat_id))
     if src:
-        src.active, src.title = True, title
+        src.active, src.title, src.topics = True, title, topics
     else:
-        src = Source(kind="channel", owner_user_id=user.id, tg_chat_id=chat_id, title=title)
+        src = Source(kind="channel", owner_user_id=user.id, tg_chat_id=chat_id, title=title, topics=topics)
         s.add(src)
     s.flush()
     for acc in _live(user):   # follow it on every account by default
@@ -982,7 +1019,8 @@ async def channels_add(request: Request, s=Depends(db_session)):
     services.log(s, "channel_added", user.id, title, user.username)
     s.commit()
     tg.reload_soon()
-    flash(request, f"Copying gold signals from {title}. Turn it off per account in account settings.")
+    flash(request, f"Copying gold signals from {title}" + (f" ({', '.join(topics.values())})" if topics else "")
+          + ". Turn it off per account in account settings.")
     return redirect("/channels")
 
 

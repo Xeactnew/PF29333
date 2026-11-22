@@ -708,3 +708,12 @@ a, .tab, .nav, .gcard, .srvpick select, .btn.link { transition: color .15s ease,
   html { scroll-behavior: auto; }
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
 }
+
+/* chat pickers: search box, topics under a group */
+.search { width: 100%; margin: 4px 0 10px; }
+.check.sub { margin: -4px 0 8px 26px; font-size: 13.5px; color: var(--straw-dim); }
+.topic-picks { margin: 0 0 10px 0; }
+.topic-picks > summary { cursor: pointer; font-size: 13px; color: var(--gilt); margin: 4px 0 8px 26px; }
+.vip-pick { border-bottom: 1px solid rgba(255,255,255,.05); padding-top: 8px; }
+.pick-row { border-bottom: 1px solid rgba(255,255,255,.05); padding: 6px 0; }
+.pick-row .pick { display: flex; justify-content: space-between; align-items: center; gap: 10px; }

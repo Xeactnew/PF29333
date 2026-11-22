@@ -96,3 +96,33 @@
   <script type="application/json" data-srv-data>{{ choices|tojson }}</script>
 </div>
 {%- endmacro %}
+
+{% macro tg_phone_form(action, csrf, countries, label="Your Telegram phone number", button="Send me a code") -%}
+<form method="post" action="{{ action }}" autocomplete="off" class="tg-phone">
+  {{ csrf_field(csrf) }}
+  <div class="fields">
+    <div class="field"><label for="tg-cc">Country</label>
+      <select id="tg-cc" name="country">{% for code, name in countries %}<option value="{{ code }}" {{ 'selected' if code == '44' }}>{{ name }} (+{{ code }})</option>{% endfor %}</select></div>
+    <div class="field"><label for="tg-ph">{{ label }}</label><input id="tg-ph" name="phone" type="tel" inputmode="tel" autocomplete="tel" required placeholder="07700 900123"></div>
+  </div>
+  <p class="muted" style="font-size:13px">Type it the way you normally would. If your number isn't from a country in the list, type it with + and the country code.</p>
+  <button class="btn primary" type="submit">{{ button }}</button>
+</form>
+{%- endmacro %}
+
+{% macro tg_code_form(login, csrf, code_action, resend_action, cancel_action, button="Link Telegram") -%}
+<div class="flash ok">Telegram sent the code for <b>{{ login.phone }}</b> {{ login.where }}</div>
+<form method="post" action="{{ code_action }}" autocomplete="off">
+  {{ csrf_field(csrf) }}
+  <div class="fields">
+    <div class="field"><label for="tg-code">Code</label><input id="tg-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" required autofocus></div>
+    <div class="field"><label for="tg-pw">2-step password (only if you set one)</label><input id="tg-pw" name="password" type="password" autocomplete="off"></div>
+  </div>
+  <button class="btn primary" type="submit">{{ button }}</button>
+</form>
+<p class="muted" style="font-size:13px;margin-top:12px">No code? Wait a minute and check the "Telegram" chat in the app.</p>
+<div class="row-btns">
+  <form method="post" action="{{ resend_action }}">{{ csrf_field(csrf) }}<button class="btn small" type="submit">Send it again{% if login.next %} by {{ login.next }}{% endif %}</button></form>
+  <form method="post" action="{{ cancel_action }}">{{ csrf_field(csrf) }}<button class="btn small" type="submit">Wrong number? Start again</button></form>
+</div>
+{%- endmacro %}

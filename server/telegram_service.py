@@ -30,6 +30,9 @@ _bot_wake = {"v": False}
 _staged_updates: dict[str, str] = {}             # bot button key -> staged update folder
 _user_clients: dict[int, object] = {}          # user_id -> TelegramClient
 _user_chats: dict[int, dict[int, int]] = {}    # user_id -> {chat_id: source_id}
+_user_topics: dict[int, dict] = {}             # source_id -> {"<topic id>": title} (forum topics they picked)
+_forums: dict[int, bool] = {}                  # chat id -> is a forum (group with topics)
+_member_checked: dict[int, float] = {}         # user_id -> when we last read which chats they're in
 _pending_logins: dict[int, dict] = {}          # user_id -> {client, phone, hash, at}
 _dialog_cache: dict[int, tuple[float, list]] = {}
 _reload_flag = {"v": True}
@@ -74,6 +77,56 @@ def reload_main() -> None:
             pass
 
 
+# ------------------------------------------------------------ forum topics
+
+def topic_of(msg, forum: bool) -> tuple[int | None, int | None]:
+    """(topic id, id of the message it replies to). In a forum every message points at its topic;
+    only a reply inside the topic points at another message. General is topic 1."""
+    r = getattr(msg, "reply_to", None)
+    if r is not None and getattr(r, "forum_topic", False):
+        top = getattr(r, "reply_to_top_id", None)
+        return (top or r.reply_to_msg_id), (r.reply_to_msg_id if top else None)
+    return (1 if forum else None), (getattr(r, "reply_to_msg_id", None) if r is not None else None)
+
+
+def topic_route(chat_id: int, topic: int | None, picked: dict, title: str) -> tuple[bool, str, str]:
+    """(read it?, group key, group name) for a message, given the topics picked for that chat."""
+    if not picked:
+        return True, "", title
+    if topic is None or str(topic) not in picked:
+        return False, "", title
+    return True, f"{chat_id}:{topic}", f"{title} › {picked[str(topic)]}"[:128]
+
+
+async def _chat_info(event) -> tuple[str, bool]:
+    cid = event.chat_id
+    if cid not in _chat_titles or cid not in _forums:
+        try:
+            chat = await event.get_chat()
+            _chat_titles[cid] = getattr(chat, "title", None) or str(cid)
+            _forums[cid] = bool(getattr(chat, "forum", False))
+        except Exception:  # noqa: BLE001
+            _chat_titles.setdefault(cid, str(cid))
+            _forums.setdefault(cid, False)
+    return _chat_titles[cid], _forums[cid]
+
+
+async def forum_topics(client, entity) -> list[dict]:
+    """A forum's topics, newest activity first (General first)."""
+    try:
+        from telethon.tl.functions.messages import GetForumTopicsRequest
+        res = await client(GetForumTopicsRequest(peer=entity, offset_date=None, offset_id=0, offset_topic=0, limit=100))
+    except (ImportError, TypeError):
+        from telethon.tl.functions.channels import GetForumTopicsRequest
+        res = await client(GetForumTopicsRequest(channel=entity, offset_date=None, offset_id=0, offset_topic=0,
+                                                 limit=100))
+    out = [{"id": tp.id, "title": getattr(tp, "title", "") or f"Topic {tp.id}"}
+           for tp in getattr(res, "topics", []) if getattr(tp, "title", None) is not None]
+    if not any(x["id"] == 1 for x in out):
+        out.insert(0, {"id": 1, "title": "General"})
+    return out
+
+
 # ------------------------------------------------------------ message handling (sync, DB)
 
 def _sane_levels(side: str, sl: float, tps: list[float]) -> bool:
@@ -87,7 +140,8 @@ _update_kinds: dict[tuple, set] = {}   # (source, chat, msg) -> updates already 
 
 
 def handle_message(source_id: int, msg_id: int, text: str, reply_to: int | None, edited: bool = False,
-                   chat_id: int | None = None, chat_title: str = "") -> str:
+                   chat_id: int | None = None, chat_title: str = "", topic_id: int | None = None,
+                   grp: str = "") -> str:
     """Turn one Telegram message into a signal or an update. Returns what happened.
 
     chat_id keeps groups apart: message numbers are per group, and an update posted in one group
@@ -125,24 +179,25 @@ def handle_message(source_id: int, msg_id: int, text: str, reply_to: int | None,
                 p = None
         if p and not p.instant and p.sl:
             # the full signal posted straight after a "BUY NOW": fill that one in, don't open twice
-            waiting = services.signal_waiting_for_levels(s, source_id, p.side, chat_id=chat_id)
+            waiting = services.signal_waiting_for_levels(s, source_id, p.side, chat_id=chat_id, topic_id=topic_id)
             if waiting:
                 services.add_update(s, waiting, "levels", p.sl, text, tps=p.tps or None,
                                     zone=(p.entry_low, p.entry_high))
                 s.commit()
                 return f"levels:{waiting.id}"
         if p:
-            sig = services.create_signal(s, source, p, text, msg_id, tg_chat_id=chat_id, channel=chat_title)
+            sig = services.create_signal(s, source, p, text, msg_id, tg_chat_id=chat_id, channel=chat_title,
+                                         topic_id=topic_id, grp=grp)
             s.commit()
             _state["last_signal"] = time.time()
             return f"signal:{sig.id}"
 
         updates = parse_update(text)
-        target = replied or services.latest_open_signal(s, source_id, chat_id=chat_id)
+        target = replied or services.latest_open_signal(s, source_id, chat_id=chat_id, topic_id=topic_id)
         if not updates:
             # "SL 3740 TP 3760" on its own: levels for a call waiting for them, or a reply giving a new SL
             waiting = replied if replied and replied.status == "open" else \
-                services.signal_waiting_for_levels(s, source_id, chat_id=chat_id)
+                services.signal_waiting_for_levels(s, source_id, chat_id=chat_id, topic_id=topic_id)
             if not waiting and is_levels_only(text):
                 waiting = target if target and target.status == "open" else None   # "SL 3790" on its own
             sl, tps = parse_levels(text)
@@ -227,22 +282,21 @@ async def run_main_reader() -> None:
 
                     async def on_msg(event, edited=False):
                         m = event.message
-                        reply = m.reply_to.reply_to_msg_id if m.reply_to else None
                         cid = event.chat_id
-                        if cid not in _chat_titles:
-                            try:
-                                chat = await event.get_chat()
-                                _chat_titles[cid] = getattr(chat, "title", None) or str(cid)
-                            except Exception:  # noqa: BLE001
-                                _chat_titles[cid] = str(cid)
+                        title, forum = await _chat_info(event)
+                        topic, reply = topic_of(m, forum)
+                        read, grp, name = topic_route(cid, topic, runtime.vip_topics().get(str(cid)) or {}, title)
+                        if not read:
+                            return                      # a topic nobody picked (e.g. the group's chat)
                         res = await asyncio.to_thread(handle_message, main_id, m.id, m.message or "", reply, edited,
-                                                      cid, _chat_titles[cid])
+                                                      cid, name, topic, grp)
+                        where = f"{name}/{m.id}" + (f" (topic {topic})" if topic and not grp else "")
                         if res in ("ignored", "update_no_signal", "edit_ignored"):
                             # keep the start of messages we didn't act on, so a missed call can be checked later
                             snippet = " ".join((m.message or "").split())[:140]
-                            log.info("VIP msg %s/%s -> %s: %s", _chat_titles[cid], m.id, res, snippet)
+                            log.info("VIP msg %s -> %s: %s", where, res, snippet)
                         else:
-                            log.info("VIP msg %s/%s -> %s", _chat_titles[cid], m.id, res)
+                            log.info("VIP msg %s -> %s", where, res)
 
                     client.add_event_handler(lambda e: on_msg(e), events.NewMessage(chats=chats))
                     client.add_event_handler(lambda e: on_msg(e, True), events.MessageEdited(chats=chats))
@@ -295,8 +349,11 @@ def _load_user_channels() -> dict[int, tuple[str, dict[int, int]]]:
         for u in users:
             if not int(feature(u.plan.features, "max_channels") or 0):
                 continue
-            chans = {src.tg_chat_id: src.id for src in s.scalars(select(Source).where(
-                Source.kind == "channel", Source.owner_user_id == u.id, Source.active.is_(True)))}
+            chans = {}
+            for src in s.scalars(select(Source).where(
+                    Source.kind == "channel", Source.owner_user_id == u.id, Source.active.is_(True))):
+                chans[src.tg_chat_id] = src.id
+                _user_topics[src.id] = dict(src.topics or {})
             out[u.id] = (security.decrypt(u.tg_session_enc), chans)
     return out
 
@@ -314,13 +371,28 @@ async def _start_user_client(user_id: int, session_str: str):
         if not src:
             return
         m = event.message
-        reply = m.reply_to.reply_to_msg_id if m.reply_to else None
-        # a customer's own channel: its name is the source's title
-        await asyncio.to_thread(handle_message, src, m.id, m.message or "", reply, edited, event.chat_id)
+        _, forum = await _chat_info(event)
+        topic, reply = topic_of(m, forum)
+        picked = _user_topics.get(src) or {}
+        # a customer's own channel: its name is the source's title (plus the topic when they picked topics)
+        read, grp, name = topic_route(event.chat_id, topic, picked, "")
+        if not read:
+            return
+        await asyncio.to_thread(handle_message, src, m.id, m.message or "", reply, edited, event.chat_id,
+                                _source_title(src, name), topic, grp)
 
     client.add_event_handler(lambda e: on_msg(e), events.NewMessage(incoming=True))
     client.add_event_handler(lambda e: on_msg(e, True), events.MessageEdited(incoming=True))
     return client
+
+
+def _source_title(source_id: int, topic_part: str) -> str:
+    """ "' › Scalp trades'" -> "Fx by KD VIP › Scalp trades"; no topic -> "" (the source's own title)."""
+    if not topic_part:
+        return ""
+    with SessionLocal() as s:
+        src = s.get(Source, source_id)
+        return f"{src.title if src else ''}{topic_part}"[:128]
 
 
 async def run_user_readers() -> None:
@@ -352,6 +424,12 @@ async def run_user_readers() -> None:
                     await c.connect()
                 except Exception:  # noqa: BLE001
                     pass
+            elif time.time() - _member_checked.get(uid, 0) > 6 * 3600:
+                _member_checked[uid] = time.time()           # which groups they're in (private VIP groups)
+                try:
+                    asyncio.get_running_loop().create_task(list_user_dialogs(uid, "", client=c))
+                except Exception:  # noqa: BLE001
+                    pass
         await asyncio.sleep(10)
 
 
@@ -364,6 +442,94 @@ def pending_login_phone(user_id: int) -> str | None:
     return None
 
 
+def pending_login(user_id: int) -> dict | None:
+    """What the code page shows: the phone, where Telegram sent the code, and whether a resend is possible."""
+    p = _pending_logins.get(user_id)
+    if p and time.time() - p["at"] < 600:
+        return {"phone": p["phone"], "where": p.get("where", ""), "next": p.get("next", ""),
+                "resend_in": max(0, int(p.get("at", 0) + p.get("timeout", 30) - time.time()))}
+    return None
+
+
+COUNTRY_CODES = [("44", "United Kingdom"), ("353", "Ireland"), ("1", "USA / Canada"), ("971", "UAE"),
+                 ("966", "Saudi Arabia"), ("974", "Qatar"), ("965", "Kuwait"), ("92", "Pakistan"), ("91", "India"),
+                 ("880", "Bangladesh"), ("234", "Nigeria"), ("233", "Ghana"), ("254", "Kenya"),
+                 ("27", "South Africa"), ("20", "Egypt"), ("212", "Morocco"), ("90", "Turkey"), ("49", "Germany"),
+                 ("33", "France"), ("34", "Spain"), ("39", "Italy"), ("31", "Netherlands"), ("32", "Belgium"),
+                 ("41", "Switzerland"), ("48", "Poland"), ("351", "Portugal"), ("40", "Romania"), ("46", "Sweden"),
+                 ("47", "Norway"), ("45", "Denmark"), ("61", "Australia"), ("64", "New Zealand"), ("60", "Malaysia"),
+                 ("65", "Singapore"), ("62", "Indonesia"), ("63", "Philippines"), ("66", "Thailand"),
+                 ("84", "Vietnam"), ("55", "Brazil"), ("52", "Mexico"), ("57", "Colombia"), ("7", "Russia / Kazakhstan")]
+
+
+def normalise_phone(raw: str, country: str = "44") -> str:
+    """A phone number as Telegram wants it: +<country code><number>. "07700 900123" with UK picked becomes
+    +447700900123 (sent as it was typed, Telegram would read 07... as another country's number)."""
+    raw = str(raw or "").strip()
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    country = "".join(ch for ch in str(country or "") if ch.isdigit()) or "44"
+    if raw.startswith("+"):
+        return "+" + digits
+    if digits.startswith("00"):
+        return "+" + digits[2:]
+    if digits.startswith(country) and len(digits) > len(country) + 8:
+        return "+" + digits                         # already has the country code, just no +
+    return "+" + country + digits.lstrip("0")
+
+
+def _code_where(sent_type, phone: str) -> str:
+    """Where Telegram sent the login code, in plain words."""
+    name = type(sent_type).__name__ if sent_type is not None else ""
+    if name == "SentCodeTypeApp":
+        return ("in the Telegram app on your phone or computer: open Telegram and look for a message from "
+                "\"Telegram\" (with a blue tick) at the top of your chats. It is not a text message.")
+    if "Sms" in name:
+        return f"by text message to {phone}."
+    if "Call" in name:
+        return f"with a phone call to {phone}."
+    if name == "SentCodeTypeEmailCode":
+        pattern = getattr(sent_type, "email_pattern", "") or "your login email"
+        return f"to your Telegram login email ({pattern})."
+    if name == "SentCodeTypeSetUpEmailRequired":
+        return ("nowhere yet: Telegram wants this account to add a login email first. In the Telegram app go to "
+                "Settings → Privacy and Security → Login Email, add one, then try again here.")
+    if name == "SentCodeTypeFragmentSms":
+        return "through Fragment (the number is a Fragment number). Open fragment.com to see it."
+    return "in the Telegram app (look for a message from \"Telegram\")."
+
+
+def _next_way(next_type) -> str:
+    name = type(next_type).__name__ if next_type is not None else ""
+    return {"CodeTypeSms": "text message", "CodeTypeCall": "phone call", "CodeTypeFlashCall": "phone call",
+            "CodeTypeMissedCall": "phone call", "CodeTypeFragmentSms": "Fragment"}.get(name, "")
+
+
+def _friendly(e: Exception) -> str:
+    """Telegram's errors in plain words."""
+    name = type(e).__name__
+    secs = getattr(e, "seconds", None)
+    if name in ("PhoneNumberInvalidError", "PhoneNumberUnoccupiedError"):
+        return "Telegram doesn't know that number. Pick your country and check the number (no spaces needed)."
+    if name in ("FloodWaitError", "PhoneNumberFloodError") or "FLOOD" in str(e).upper():
+        mins = max(1, round((secs or 60) / 60))
+        return f"Telegram asked us to wait {mins} minute{'s' if mins != 1 else ''} before sending another code."
+    if name == "PhoneNumberBannedError":
+        return "Telegram has blocked that number."
+    if name in ("ApiIdInvalidError", "ApiIdPublishedFloodError"):
+        return "the server's Telegram API keys aren't accepted. An admin needs to check them in Admin → Telegram."
+    if name in ("PhoneCodeInvalidError",):
+        return "that code isn't right. Check it and try again."
+    if name in ("PhoneCodeExpiredError",):
+        return "that code has expired. Ask for a new one."
+    if name in ("SendCodeUnavailableError",):
+        return "Telegram can't send another code this way right now. Wait a few minutes and start again."
+    return str(e) or name
+
+
+def _mask(phone: str) -> str:
+    return phone[:4] + "…" + phone[-3:] if len(phone) > 8 else phone
+
+
 async def start_user_login(user_id: int, phone: str) -> None:
     if not api_ready():
         raise RuntimeError("Telegram linking isn't set up on this server yet")
@@ -372,8 +538,45 @@ async def start_user_login(user_id: int, phone: str) -> None:
         await old["client"].disconnect()
     client = _new_client()
     await client.connect()
-    sent = await client.send_code_request(phone)
-    _pending_logins[user_id] = {"client": client, "phone": phone, "hash": sent.phone_code_hash, "at": time.time()}
+    try:
+        sent = await client.send_code_request(phone)
+    except Exception as e:  # noqa: BLE001
+        await client.disconnect()
+        log.warning("telegram code for %s (%s) not sent: %s: %s", "reader" if user_id == MAIN_KEY else f"user {user_id}",
+                    _mask(phone), type(e).__name__, e)
+        raise RuntimeError(_friendly(e)) from e
+    where = _code_where(getattr(sent, "type", None), phone)
+    _pending_logins[user_id] = {"client": client, "phone": phone, "hash": sent.phone_code_hash, "at": time.time(),
+                                "where": where, "next": _next_way(getattr(sent, "next_type", None)),
+                                "timeout": getattr(sent, "timeout", None) or 30}
+    log.info("telegram code for %s (%s) sent: %s", "reader" if user_id == MAIN_KEY else f"user {user_id}",
+             _mask(phone), type(getattr(sent, "type", None)).__name__)
+
+
+async def cancel_login(user_id: int) -> None:
+    """Start over (wrong number typed)."""
+    p = _pending_logins.pop(user_id, None)
+    if p:
+        try:
+            await p["client"].disconnect()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+async def resend_user_code(user_id: int) -> None:
+    """Send the code again, the next way Telegram offers (usually a text message or a call)."""
+    p = _pending_logins.get(user_id)
+    if not p:
+        raise RuntimeError("The code expired. Start again with your phone number.")
+    from telethon.tl.functions.auth import ResendCodeRequest
+    try:
+        sent = await p["client"](ResendCodeRequest(phone_number=p["phone"], phone_code_hash=p["hash"]))
+    except Exception as e:  # noqa: BLE001
+        log.warning("telegram code resend for %s failed: %s: %s", _mask(p["phone"]), type(e).__name__, e)
+        raise RuntimeError(_friendly(e)) from e
+    p.update(hash=sent.phone_code_hash, at=time.time(), where=_code_where(getattr(sent, "type", None), p["phone"]),
+             next=_next_way(getattr(sent, "next_type", None)), timeout=getattr(sent, "timeout", None) or 30)
+    log.info("telegram code resent to %s: %s", _mask(p["phone"]), type(getattr(sent, "type", None)).__name__)
 
 
 async def finish_user_login(user_id: int, code: str, password: str = "") -> tuple[str, str, str]:
@@ -381,20 +584,35 @@ async def finish_user_login(user_id: int, code: str, password: str = "") -> tupl
     p = _pending_logins.get(user_id)
     if not p:
         raise RuntimeError("The code expired. Start again with your phone number.")
-    client = p["client"]
+    client, keep = p["client"], False
     try:
         try:
-            await client.sign_in(phone=p["phone"], code=code, phone_code_hash=p["hash"])
+            if not p.get("code_ok"):
+                await client.sign_in(phone=p["phone"], code=code, phone_code_hash=p["hash"])
+            else:
+                raise SessionPasswordNeededError(None)      # code already accepted: only the password is left
         except SessionPasswordNeededError:
+            p["code_ok"] = True
             if not password:
-                raise RuntimeError("Your Telegram has a 2-step password. Enter it with the code.")
-            await client.sign_in(password=password)
+                keep = True                                 # the code was right: they just add the password
+                raise RuntimeError("Your Telegram has a 2-step password. Enter it below with the code.")
+            try:
+                await client.sign_in(password=password)
+            except Exception as e:  # noqa: BLE001
+                keep = type(e).__name__ == "PasswordHashInvalidError"
+                raise RuntimeError("That 2-step password isn't right." if keep else _friendly(e)) from e
+        except RuntimeError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            keep = type(e).__name__ == "PhoneCodeInvalidError"     # a typo: let them try the code again
+            raise RuntimeError(_friendly(e)) from e
         me = await client.get_me()
         name = " ".join(x for x in (me.first_name, me.last_name) if x) or (me.username or "Telegram")
         return client.session.save(), name, p["phone"]
     finally:
-        _pending_logins.pop(user_id, None)
-        await client.disconnect()
+        if not keep:
+            _pending_logins.pop(user_id, None)
+            await client.disconnect()
 
 
 async def list_user_dialogs(user_id: int, session_str: str, client=None) -> list[dict]:
@@ -412,16 +630,39 @@ async def list_user_dialogs(user_id: int, session_str: str, client=None) -> list
         out = []
 
         async def collect():
-            async for d in client.iter_dialogs(limit=300):
+            forums = []
+            async for d in client.iter_dialogs(limit=None):       # every channel and group, archived ones too
                 if d.is_channel or d.is_group:
-                    out.append({"id": d.id, "title": d.name or str(d.id)})
-        await asyncio.wait_for(collect(), 30)
+                    item = {"id": d.id, "title": d.name or str(d.id), "topics": []}
+                    out.append(item)
+                    if getattr(d.entity, "forum", False):
+                        forums.append((item, d.entity))
+            for item, entity in forums:                     # groups with topics: list them to pick from
+                try:
+                    item["topics"] = await asyncio.wait_for(forum_topics(client, entity), 10)
+                except Exception as e:  # noqa: BLE001
+                    log.info("topics of %s: %s", item["title"], e)
+                    item["topics"] = [{"id": 1, "title": "General"}]
+                item["forum"] = True
+        await asyncio.wait_for(collect(), 60)
         _dialog_cache[user_id] = (time.time(), out)
         _dialog_errors.pop(user_id, None)
+        if user_id > 0:
+            await asyncio.to_thread(save_membership, user_id, [d["id"] for d in out])
         return out
     finally:
         if temp:
             await temp.disconnect()
+
+
+def save_membership(user_id: int, chat_ids: list[int]) -> None:
+    """Remember which chats a customer is in on their own Telegram: a private VIP group they're in
+    themselves is theirs to copy."""
+    with SessionLocal() as s:
+        u = s.get(User, user_id)
+        if u is not None and sorted(u.tg_member_chats or []) != sorted(chat_ids):
+            u.tg_member_chats = sorted(set(chat_ids))
+            s.commit()
 
 
 _dialog_tasks: dict[int, asyncio.Task] = {}
@@ -441,6 +682,13 @@ def _refresh_dialogs(user_id: int, session_str: str) -> asyncio.Task:
         task.add_done_callback(done)
         _dialog_tasks[user_id] = task
     return task
+
+
+def refresh_dialogs_soon(user_id: int, session_str: str) -> None:
+    try:
+        _refresh_dialogs(user_id, session_str)
+    except RuntimeError:                                # no event loop (tests, scripts)
+        pass
 
 
 async def dialogs_for_page(user_id: int, session_str: str, wait: float = 2.5) -> tuple[list[dict], str]:

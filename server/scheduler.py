@@ -20,27 +20,40 @@ _alerts = {"capacity_at": 0.0, "capacity_waiting": -1, "offline": set(), "acc_er
 
 # ------------------------------------------------------------ capacity
 
+ADD_VPS = ("To add one: buy another Windows VPS, then Admin → Servers → Add a VPS gives you one line to paste "
+           "into PowerShell (as Administrator) on it. It sets itself up and starts taking accounts.")
+
+
+def capacity_text(cap: dict, waiting: int, threshold: int) -> str:
+    """The admin bot's message when the servers are full or nearly full ("" when there's room)."""
+    if not cap["total"] and not waiting:
+        return ""
+    pct = round(100 * cap["in_use"] / cap["total"]) if cap["total"] else 100
+    mem = (f"\n🧠 Out of memory (no new accounts go there): {', '.join(cap['memory_full'])}."
+           if cap.get("memory_full") else "")
+    used = f"{cap['in_use']}/{cap['total']} slots used on {cap['online']} online VPS ({pct}%)."
+    if waiting or cap["free"] == 0:
+        head = (f"🚨 Servers full: {waiting} customer account(s) waiting for a slot." if waiting
+                else "🚨 Servers full: the next new account will have to wait.")
+        return f"{head}\n{used}{mem}\nOpen a new VPS now. {ADD_VPS}"
+    if cap["free"] <= threshold or pct >= 80:
+        return (f"⚠️ Servers nearly full: {cap['free']} free slot(s) left. {used}{mem}\n"
+                f"Time to open a new VPS. {ADD_VPS}")
+    return ""
+
+
 def assignment_tick() -> None:
     with SessionLocal() as s:
         still = services.assign_accounts(s)
         s.commit()
         cap = services.capacity(s)
-        threshold = int(get_setting(s, "capacity_alert_free_slots") or 0)
+        text = capacity_text(cap, len(still), int(get_setting(s, "capacity_alert_free_slots") or 0))
         now = time.time()
         waiting = len(still)
-        if cap["free"] <= threshold and (now - _alerts["capacity_at"] > 6 * 3600 or waiting > _alerts["capacity_waiting"]):
-            if waiting or cap["total"]:
-                if waiting:
-                    text = (f"🚨 VPS full: {waiting} customer account(s) are waiting for a slot.\n"
-                            f"{cap['in_use']}/{cap['total']} slots used on {cap['online']} online VPS.\n"
-                            f"Add another VPS (or raise a VPS's slot limit) in Admin → Servers.")
-                else:
-                    text = (f"⚠️ VPS nearly full: {cap['free']} free slot(s) left "
-                            f"({cap['in_use']}/{cap['total']} used on {cap['online']} VPS). "
-                            f"Time to add another VPS.")
-                notify.send_admins(text)
-                _alerts["capacity_at"] = now
-                _alerts["capacity_waiting"] = waiting
+        if text and (now - _alerts["capacity_at"] > 6 * 3600 or waiting > _alerts["capacity_waiting"]):
+            notify.send_admins(text)
+            _alerts["capacity_at"] = now
+            _alerts["capacity_waiting"] = waiting
         if waiting == 0:
             _alerts["capacity_waiting"] = 0
         # node went offline

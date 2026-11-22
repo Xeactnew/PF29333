@@ -207,6 +207,15 @@
     show();
   });
 
+  // Search box over a long chat list: <input data-filter=".row"> hides rows whose data-text doesn't match
+  document.querySelectorAll("input[data-filter]").forEach((box) => {
+    const rows = () => document.querySelectorAll(box.dataset.filter);
+    box.addEventListener("input", () => {
+      const q = box.value.trim().toLowerCase();
+      rows().forEach((r) => { r.hidden = q !== "" && !(r.dataset.text || r.textContent.toLowerCase()).includes(q); });
+    });
+  });
+
   // Lets Android offer "Install app"; also shows a friendly page when there's no signal.
   if ("serviceWorker" in navigator && location.protocol === "https:") {
     navigator.serviceWorker.register("/sw.js").catch(() => {});

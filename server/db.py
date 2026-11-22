@@ -63,6 +63,9 @@ class User(Base):
     tg_session_enc: Mapped[str] = mapped_column(Text, default="")
     tg_phone: Mapped[str] = mapped_column(String(32), default="")
     tg_name: Mapped[str] = mapped_column(String(128), default="")
+    tg_member_chats: Mapped[list] = mapped_column(JSON, default=list)   # chat ids on their own Telegram (last check)
+    # VIP groups an admin turned on for this customer (groups open to everyone need no grant)
+    vip_grants: Mapped[list] = mapped_column(JSON, default=list)
     # access time limit set by an admin (None = no limit); the account closes by itself when it passes
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     reminders_sent: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -127,6 +130,8 @@ class Source(Base):
     owner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     tg_chat_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     title: Mapped[str] = mapped_column(String(128))
+    # a Telegram forum: only these topics {"<topic id>": "<title>"}; empty = every topic
+    topics: Mapped[dict] = mapped_column(JSON, default=dict)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
@@ -156,6 +161,8 @@ class Signal(Base):
     tg_msg_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tg_chat_id: Mapped[int | None] = mapped_column(Integer, nullable=True)   # which Telegram group it came from
     channel: Mapped[str] = mapped_column(String(128), default="")             # that group's name
+    tg_topic_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # forum topic it was posted in
+    grp: Mapped[str] = mapped_column(String(48), default="")   # group key when a topic is its own group ("chat:topic")
     created_by: Mapped[str] = mapped_column(String(64), default="telegram")
     target_account_ids: Mapped[list] = mapped_column(JSON, default=list)  # manual signals for specific accounts
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -455,6 +462,12 @@ def seed(s) -> None:
         if get_setting(s, "contact_text") == OLD_CONTACT_TEXT:
             set_setting(s, "contact_text", DEFAULT_SETTINGS["contact_text"])
         s.add(Setting(key="defaults_v13", value={"v": True}))
+    if not s.get(Setting, "vip_access_v1"):        # 1.3.36: VIP groups became private. Customers who already
+        chats = [str(c) for c in (get_setting(s, "tg_vip_chats") or [])]   # copy them keep them (admins can untick)
+        if chats:
+            for u in s.scalars(select(User).join(Account).where(Account.removed.is_(False)).distinct()):
+                u.vip_grants = sorted(set(u.vip_grants or []) | set(chats))
+        s.add(Setting(key="vip_access_v1", value={"v": True}))
     s.commit()
 
 

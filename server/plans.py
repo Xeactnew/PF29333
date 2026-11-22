@@ -229,7 +229,7 @@ def clean_groups(raw) -> dict:
     if not isinstance(raw, dict):
         return out
     for sid, g in list(raw.items())[:50]:
-        if not re.fullmatch(r"-?\d+|s\d+", str(sid)) or not isinstance(g, dict):
+        if not re.fullmatch(r"-?\d+(:\d+)?|s\d+", str(sid)) or not isinstance(g, dict):
             continue
         c = {}
         if g.get("paused"):

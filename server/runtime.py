@@ -13,7 +13,7 @@ from .db import SessionLocal, get_setting, set_setting
 _cache: dict = {"at": 0.0, "v": {}}
 
 KEYS = ("tg_api_id", "tg_api_hash", "tg_main_session_enc", "tg_vip_chats", "tg_bot_token_enc",
-        "tg_bot_username", "public_url")
+        "tg_bot_username", "public_url", "tg_vip_topics", "vip_open")
 
 
 def _load() -> dict:
@@ -65,6 +65,19 @@ def vip_chats() -> list:
         if c:
             out.append(int(c) if c.lstrip("-").isdigit() else c)
     return out
+
+
+def vip_topics() -> dict[str, dict[str, str]]:
+    """Forum VIP groups read topic by topic: {"<chat id>": {"<topic id>": "<topic title>"}}.
+    A chat that isn't here (or has no topics ticked) is read whole."""
+    return {str(k): {str(t): str(n) for t, n in (v or {}).items()}
+            for k, v in (_load().get("tg_vip_topics") or {}).items() if v}
+
+
+def vip_open() -> set[str]:
+    """VIP groups every customer gets (chat ids). The others are private: only customers an admin
+    turned them on for, or who are in the group on their own Telegram."""
+    return {str(c) for c in (_load().get("vip_open") or [])}
 
 
 def bot_token() -> str:

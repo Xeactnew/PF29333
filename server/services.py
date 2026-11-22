@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import and_, false, func, or_, select
 
-from . import config, notify
+from . import config, notify, runtime
 from .db import (Account, AccountSource, Activity, Deal, Event, Node, Plan, Renewal, Signal,
                  SignalUpdate, Snapshot, Source, User, get_setting, main_source, set_setting, utcnow)
 from .parser import ParsedSignal
@@ -75,12 +75,13 @@ def user_channel_count(s, user: User) -> int:
 
 def create_signal(s, source: Source, p: ParsedSignal, raw: str = "", tg_msg_id: int | None = None,
                   created_by: str = "telegram", target_account_ids: list[int] | None = None,
-                  tg_chat_id: int | None = None, channel: str = "") -> Signal:
+                  tg_chat_id: int | None = None, channel: str = "", topic_id: int | None = None,
+                  grp: str = "") -> Signal:
     sig = Signal(source_id=source.id, symbol=p.symbol, side=p.side, order_type=p.order_type,
                  entry_low=p.entry_low, entry_high=p.entry_high, sl=p.sl, tps=list(p.tps),
                  raw_text=raw[:4000], tg_msg_id=tg_msg_id, created_by=created_by,
                  target_account_ids=list(target_account_ids or []), tg_chat_id=tg_chat_id,
-                 channel=(channel or source.title)[:128])
+                 channel=(channel or source.title)[:128], tg_topic_id=topic_id, grp=grp[:48])
     s.add(sig)
     s.flush()
     payload = {"signal": {"id": sig.id, **p.as_dict(), "source": sig.channel or source.title,
@@ -140,26 +141,33 @@ def add_update(s, sig: Signal, kind: str, value: float | None = None, raw: str =
     return upd
 
 
-def _same_chat(q, chat_id: int | None):
-    return q.where(Signal.tg_chat_id == chat_id) if chat_id is not None else q
+def _same_chat(q, chat_id: int | None, topic_id: int | None = None):
+    """Updates only ever reach signals from the same Telegram chat, and in a forum the same topic
+    (so chat in "Discussion" can't move a trade from "Signals")."""
+    if chat_id is not None:
+        q = q.where(Signal.tg_chat_id == chat_id)
+    if topic_id is not None:
+        q = q.where(or_(Signal.tg_topic_id == topic_id, Signal.tg_topic_id.is_(None)))
+    return q
 
 
 def signal_waiting_for_levels(s, source_id: int, side: str | None = None, minutes: int = 30,
-                              chat_id: int | None = None) -> Signal | None:
+                              chat_id: int | None = None, topic_id: int | None = None) -> Signal | None:
     """The latest 'BUY NOW' style signal from this group that still has no stop loss."""
     since = utcnow() - timedelta(minutes=minutes)
     q = _same_chat(select(Signal).where(Signal.source_id == source_id, Signal.status == "open",
-                                        Signal.sl.is_(None), Signal.created_at >= since), chat_id)
+                                        Signal.sl.is_(None), Signal.created_at >= since), chat_id, topic_id)
     if side:
         q = q.where(Signal.side == side)
     return s.scalar(q.order_by(Signal.id.desc()))
 
 
-def latest_open_signal(s, source_id: int, hours: int = 8, chat_id: int | None = None) -> Signal | None:
+def latest_open_signal(s, source_id: int, hours: int = 8, chat_id: int | None = None,
+                       topic_id: int | None = None) -> Signal | None:
     """The newest open signal from this group (updates without a reply apply to it)."""
     since = utcnow() - timedelta(hours=hours)
     q = _same_chat(select(Signal).where(Signal.source_id == source_id, Signal.status == "open",
-                                        Signal.created_at >= since), chat_id)
+                                        Signal.created_at >= since), chat_id, topic_id)
     return s.scalar(q.order_by(Signal.id.desc()))
 
 
@@ -182,7 +190,49 @@ def events_for_account(s, account: Account, limit: int = 50) -> list[Event]:
     q = select(Event).where(Event.id > account.event_cursor, or_(
         Event.account_id == account.id,
         and_(Event.account_id.is_(None), Event.source_id.in_(src) if src else false())))
-    return list(s.scalars(q.order_by(Event.id).limit(limit)))
+    events = list(s.scalars(q.order_by(Event.id).limit(limit)))
+    main_id = main_source(s).id
+    vip = [e for e in events if e.account_id is None and e.source_id == main_id and e.signal_id]
+    if not vip:
+        return events
+    keys = vip_keys(s, account.user)
+    sigs = {x.id: x for x in s.scalars(select(Signal).where(Signal.id.in_({e.signal_id for e in vip})))}
+    out, delivered = [], False
+    for e in events:
+        if e in vip and not vip_ok(sigs.get(e.signal_id), keys):
+            if not delivered:                       # nothing before it to deliver: never look at it again
+                account.event_cursor = max(account.event_cursor, e.id)
+            continue
+        delivered = True
+        out.append(e)
+    return out
+
+
+# ------------------------------------------------------------ private VIP groups
+
+def vip_keys(s, user: User | None) -> set[str]:
+    """The VIP groups (chat ids) this customer gets: open to everyone, turned on for them by an admin,
+    or a group they're in on their own Telegram."""
+    vip = {str(c) for c in runtime.vip_chats()}
+    keys = set(runtime.vip_open())
+    if user is not None:
+        keys |= {str(c) for c in (user.vip_grants or [])}
+        keys |= {str(c) for c in (user.tg_member_chats or [])} & vip
+    return keys
+
+
+def vip_ok(sig: Signal | None, keys: set[str]) -> bool:
+    """May a customer with these VIP groups see / copy this VIP signal? Admin's own manual VIP signals
+    (no Telegram chat) go to everyone."""
+    if sig is None or sig.tg_chat_id is None:
+        return True
+    return str(sig.tg_chat_id) in keys or group_key(sig) in keys
+
+
+def visible_signal(s, user: User, sig: Signal, keys: set[str] | None = None, main_id: int | None = None) -> bool:
+    if sig.source_id != (main_id if main_id is not None else main_source(s).id):
+        return True
+    return vip_ok(sig, vip_keys(s, user) if keys is None else keys)
 
 
 # ------------------------------------------------------------ VPS capacity
@@ -192,6 +242,14 @@ def node_online(node: Node) -> bool:
                 (utcnow() - node.last_seen).total_seconds() < config.NODE_OFFLINE_SECONDS)
 
 
+RAM_FULL = 90          # % memory in use: a VPS this full takes no new MT5s, whatever its slot limit
+
+
+def memory_full(node: Node) -> bool:
+    ram = (node.info or {}).get("ram")
+    return ram is not None and float(ram) >= RAM_FULL
+
+
 def capacity(s) -> dict:
     nodes = list(s.scalars(select(Node)))
     used = dict(s.execute(select(Account.node_id, func.count()).where(Account.node_id.is_not(None))
@@ -199,10 +257,12 @@ def capacity(s) -> dict:
     online = [n for n in nodes if node_online(n)]
     total = sum(n.max_slots for n in online)
     in_use = sum(used.get(n.id, 0) for n in online)
+    free_by_node = {n.id: 0 if memory_full(n) else max(0, n.max_slots - used.get(n.id, 0)) for n in online}
     waiting = s.scalar(select(func.count()).select_from(Account).where(
         Account.node_id.is_(None), Account.removed.is_(False), Account.waiting_since.is_not(None))) or 0
     return {"nodes": nodes, "used": used, "online": len(online), "total": total,
-            "in_use": in_use, "free": max(0, total - in_use), "waiting": waiting}
+            "in_use": in_use, "free": sum(free_by_node.values()), "free_by_node": free_by_node,
+            "memory_full": [n.name for n in online if memory_full(n)], "waiting": waiting}
 
 
 def should_run(account: Account) -> bool:
@@ -219,7 +279,7 @@ def assign_accounts(s) -> list[Account]:
             acc.waiting_since = None
     s.flush()
     cap = capacity(s)
-    free = {n.id: n.max_slots - cap["used"].get(n.id, 0) for n in cap["nodes"] if node_online(n)}
+    free = dict(cap["free_by_node"])
     waiting = list(s.scalars(select(Account).join(User).where(
         Account.node_id.is_(None), Account.removed.is_(False),
         User.status.in_(("active", "payment_check"))).order_by(Account.waiting_since, Account.id)))
@@ -508,30 +568,47 @@ def learned_servers(s) -> list[str]:
 # ------------------------------------------------------------ signal groups (one per Telegram chat)
 
 def group_key(sig: Signal) -> str:
-    """Groups are Telegram chats: the VIP source reads several, and each gets its own card and settings."""
+    """Groups are Telegram chats: the VIP source reads several, and each gets its own card and settings.
+    A forum topic that was picked on its own is its own group ("<chat>:<topic>")."""
+    if sig.grp:
+        return sig.grp
     return str(sig.tg_chat_id) if sig.tg_chat_id is not None else f"s{sig.source_id}"
 
 
-def signal_groups(s, source_ids) -> list[dict]:
-    """Every group a customer's followed sources have posted from, newest activity first."""
+def chat_of(key: str) -> str:
+    """The Telegram chat of a group key ("-100123:7" -> "-100123")."""
+    return str(key).split(":", 1)[0]
+
+
+def signal_groups(s, source_ids, user: User | None = None) -> list[dict]:
+    """Every group a customer's followed sources have posted from, newest activity first.
+    With a user, private VIP groups they don't get are left out."""
     source_ids = list(source_ids) or [-1]
     sources = {x.id: x for x in s.scalars(select(Source).where(Source.id.in_(source_ids)))}
-    rows = s.execute(select(Signal.tg_chat_id, Signal.source_id, func.max(Signal.id))
+    rows = s.execute(select(Signal.grp, Signal.tg_chat_id, Signal.source_id, func.max(Signal.id))
                      .where(Signal.source_id.in_(source_ids), Signal.tg_chat_id.is_not(None))
-                     .group_by(Signal.tg_chat_id, Signal.source_id)).all()
+                     .group_by(Signal.grp, Signal.tg_chat_id, Signal.source_id)).all()
+    main_id = main_source(s).id
+    allowed = vip_keys(s, user) if user is not None else None
     out, seen_sources, keys = [], set(), {}
-    for chat, sid, last_id in sorted(rows, key=lambda r: -r[2]):
+    for grp, chat, sid, last_id in sorted(rows, key=lambda r: -r[3]):
+        key = grp or str(chat)
+        if allowed is not None and sid == main_id and key not in allowed and str(chat) not in allowed:
+            continue                                # a private VIP group this customer doesn't get
         seen_sources.add(sid)
-        if str(chat) in keys:                       # the same chat followed through two sources
+        if key in keys:                             # the same chat followed through two sources
             continue
-        keys[str(chat)] = True
+        keys[key] = True
         last = s.get(Signal, last_id)
         src = sources.get(sid)
-        out.append({"key": str(chat), "title": (last.channel if last and last.channel else (src.title if src else "?")),
+        out.append({"key": key, "title": (last.channel if last and last.channel else (src.title if src else "?")),
                     "source_id": sid, "source": src.title if src else "", "last": last})
     for sid, src in sources.items():
         if sid not in seen_sources and src.kind != "manual":
-            last = s.scalar(select(Signal).where(Signal.source_id == sid).order_by(Signal.id.desc()).limit(1))
+            q = select(Signal).where(Signal.source_id == sid)
+            if sid == main_id and allowed is not None:
+                q = q.where(Signal.tg_chat_id.is_(None))       # only the admins' own VIP signals, never a hidden group's
+            last = s.scalar(q.order_by(Signal.id.desc()).limit(1))
             out.append({"key": f"s{sid}", "title": src.title, "source_id": sid, "source": src.title, "last": last})
     out.sort(key=lambda g: g["last"].id if g["last"] else 0, reverse=True)
     return out
@@ -575,7 +652,8 @@ OPT_KEYS = ("tp_target", "wait_for_zone")
 
 def optimisation(s, key: str) -> list[str]:
     """What optimised copying does for one group (empty when the group isn't optimised)."""
-    r = (get_setting(s, "group_rules") or {}).get(str(key)) or {}
+    rules = get_setting(s, "group_rules") or {}
+    r = rules.get(str(key)) or rules.get(chat_of(key)) or {}
     out = []
     tp = r.get("tp_target")
     if tp in ("tp1", "tp2"):
@@ -612,4 +690,5 @@ def group_rule(s, sig: Signal) -> dict:
     """Admin's house rules for one VIP group, e.g. KD: risk-free = each entry + 15 pips."""
     if sig.tg_chat_id is None:
         return {}
-    return (get_setting(s, "group_rules") or {}).get(str(sig.tg_chat_id)) or {}
+    rules = get_setting(s, "group_rules") or {}
+    return rules.get(group_key(sig)) or rules.get(str(sig.tg_chat_id)) or {}

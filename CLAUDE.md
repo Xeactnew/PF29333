@@ -47,6 +47,26 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
   website's list (`broker_names`), 3 min apart. Each run saves `broker-finder\finder_dialog.txt` (window dump)
   for fixing the automation if MT5's window changes. State: `broker-finder.json`. Setting `broker_finder` in
   node config (on by default on Windows).
+- **Private VIP groups (1.3.36, owner's choice: hidden = not copied):** a customer only sees AND copies a VIP group
+  (by chat id) that is open to everyone (setting `vip_open`, Admin → Telegram "Everyone gets it"), turned on for
+  them (`User.vip_grants`, admin customer page "VIP groups they get"), or that they're in on their own Telegram
+  (`User.tg_member_chats`, saved whenever their chat list loads + every 6 h). `services.vip_keys` / `vip_ok` /
+  `visible_signal`; `events_for_account` drops hidden VIP events (and moves the cursor past leading ones);
+  `signal_groups(..., user)`, the Signals page, overview and catch-up filter too. Admin manual VIP signals (no
+  chat) go to everyone. Migration `vip_access_v1` gave existing customers with accounts every VIP group.
+- **Telegram topics (1.3.36):** forum groups (e.g. Fx by KD VIP: Signals, Scalp trades, Discussion…).
+  `telegram_service.topic_of(msg, forum)` → (topic, reply); `topic_route` reads only picked topics. Picked topics:
+  VIP `tg_vip_topics` {chat: {topic: title}} (Admin → Telegram), customer `Source.topics`. A picked topic is its own
+  group `"<chat>:<topic>"` (`Signal.grp`, name "Group › Topic"); unpicked forums are read whole as one group.
+  Every signal stores `Signal.tg_topic_id`; updates only reach signals in the same topic (or pre-1.3.36 signals).
+  House rules / optimisation for a chat cover its topics. Chat lists show every channel (no 300 limit) with topics.
+- **Telegram login code (1.3.36):** `normalise_phone` + country picker (a UK "07…" used to go to Telegram as
+  another country's number); the code page says where Telegram sent it (`_code_where`: usually the "Telegram" chat
+  in the app, not SMS), "Send it again" (`resend_user_code`, next way e.g. SMS), "Wrong number?" (`cancel_login`),
+  Telegram errors in plain words, and every attempt is logged in server.log (phone masked). Forms: `_macros`
+  `tg_phone_form` / `tg_code_form`. A 2-step password or a mistyped code no longer restarts the login.
+- **Servers full (1.3.36):** `scheduler.capacity_text` warns at ≥80% used or ≤ the free-slot setting, "full" when
+  none free / accounts waiting, with how to add a VPS. A VPS at ≥90% RAM (`services.RAM_FULL`) takes no new accounts.
 - Add-account / login forms: Broker → Server dropdowns (`brokers.choices` + `_macros.server_picker`),
   "isn't listed" opens a typed box; without JavaScript only the typed box shows.
 - **Plain words for customers** (owner: "easy enough for a 10 year old"): say "signal" not "call", "Ready" not
@@ -99,7 +119,7 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
 - `update_vps.ps1` / `setup_vps.ps1`: install/update on Windows (robocopy; keeps data, accounts, logs, signals, mt5-base).
 
 ## Working on it
-- Tests: `python -m pytest -q` (all must pass; currently 196). Worker tests use `tests/fake_mt5.py`.
+- Tests: `python -m pytest -q` (all must pass; currently 212). Worker tests use `tests/fake_mt5.py`.
 - Before packaging: `python tools/build_assets.py [path-to-esbuild]` (needs esbuild; icons need Chrome + playwright).
 - Version lives in three places: `server/system.py`, `node/worker.py`, `node/node_agent.py` (`VERSION = "x.y.z"`).
 - Release: push to `main`, then the owner uses **Update from GitHub** (Admin → System → Check for updates →

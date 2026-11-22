@@ -192,7 +192,33 @@ def user_page(user_id: int, request: Request, s=Depends(db_session)):
                   stats=services.stats(s, ids), summary=services.activity_summary(s, user), acts=acts,
                   renewals=renewals, channels=channels, new_login=new_login, requests=reqs,
                   time_limits=billing_mod.TIME_LIMITS, plans=list(s.scalars(select(Plan).order_by(Plan.sort))),
-                  archived=vault.has_archive(s, user.username, user.email)))
+                  archived=vault.has_archive(s, user.username, user.email), vip_groups=_vip_access_rows(s, user)))
+
+
+def _vip_access_rows(s, user: User) -> list[dict]:
+    """Each VIP group and whether this customer gets it (and why)."""
+    titles = _vip_titles(s, [])
+    opened = runtime.vip_open()
+    member = {str(c) for c in (user.tg_member_chats or [])}
+    grants = {str(c) for c in (user.vip_grants or [])}
+    return [{"chat": c, "title": title, "open": c in opened, "member": c in member, "granted": c in grants}
+            for c, title in titles.items()]
+
+
+@router.post("/users/{user_id}/vip")
+async def user_vip(user_id: int, request: Request, s=Depends(db_session)):
+    """Turn private VIP groups on or off for one customer."""
+    admin = current_admin(request, s)
+    user = _user(s, user_id)
+    form = await form_data(request)
+    picked = form.get("chat", [])
+    picked = picked if isinstance(picked, list) else [picked]
+    vip = {str(c) for c in runtime.vip_chats()}
+    user.vip_grants = sorted({str(c) for c in picked if str(c) in vip})
+    services.log(s, "vip_access_set", user.id, ",".join(user.vip_grants) or "none", admin.username)
+    s.commit()
+    flash(request, "Saved. Their accounts copy these groups from the next signal.")
+    return redirect(f"/admin/users/{user.id}#vip")
 
 
 @router.post("/users/{user_id}/plan")
@@ -781,7 +807,9 @@ async def telegram_page(request: Request, s=Depends(db_session)):
     return render(request, "admin/telegram.html", _ctx(
         admin, st=tg.status(), api_id=api_id, has_hash=bool(api_hash), has_session=bool(runtime.main_session()),
         pending=tg.pending_login_phone(tg.MAIN_KEY), dialogs=dialogs, dialog_error=dialog_error,
-        vip=[str(c) for c in runtime.vip_chats()], bot_user=runtime.bot_username(), has_bot=bool(runtime.bot_token()),
+        vip=[str(c) for c in runtime.vip_chats()], vip_topics=runtime.vip_topics(), vip_open=runtime.vip_open(),
+        login=tg.pending_login(tg.MAIN_KEY), countries=tg.COUNTRY_CODES,
+        bot_user=runtime.bot_username(), has_bot=bool(runtime.bot_token()),
         admins=list(s.scalars(select(Admin))), link=link, rules=get_setting(s, "group_rules") or {},
         vip_titles=_rule_titles(s, dialogs), opt_requests=_opt_requests(s)))
 
@@ -841,7 +869,7 @@ async def telegram_optimise_requests(request: Request, s=Depends(db_session)):
 
 def _vip_titles(s, dialogs) -> dict:
     """Names for the ticked VIP groups: from Telegram when it answers, otherwise from their signals."""
-    names = {str(d.id): d.title for d in dialogs}
+    names = {str(d["id"]): d["title"] for d in dialogs}
     for chat, channel in s.execute(select(Signal.tg_chat_id, Signal.channel).where(Signal.tg_chat_id.is_not(None))
                                    .group_by(Signal.tg_chat_id)).all():
         names.setdefault(str(chat), channel)
@@ -912,15 +940,37 @@ async def telegram_main_start(request: Request, s=Depends(db_session)):
     current_admin(request, s)
     form = await form_data(request)
     from . import telegram_service as tg
-    phone = re.sub(r"[^\d+]", "", str(form.get("phone", "")))
-    if len(phone) < 8:
-        flash(request, "Enter the phone number with country code, like +447700900123.", "err")
+    phone = tg.normalise_phone(str(form.get("phone", "")), str(form.get("country", "44")))
+    if len(phone) < 9:
+        flash(request, "Enter the phone number of the reader account.", "err")
         return redirect("/admin/telegram")
     try:
         await tg.start_main_login(phone)
-        flash(request, "Telegram sent a login code to that account (check the Telegram app). Enter it below.")
+        flash(request, f"Telegram sent the code for {phone}. Enter it below.")
     except Exception as e:  # noqa: BLE001
-        flash(request, f"Telegram didn't accept that: {e}", "err")
+        flash(request, f"Telegram didn't send a code to {phone}: {e}", "err")
+    return redirect("/admin/telegram")
+
+
+@router.post("/telegram/main/resend")
+async def telegram_main_resend(request: Request, s=Depends(db_session)):
+    current_admin(request, s)
+    await form_data(request)
+    from . import telegram_service as tg
+    try:
+        await tg.resend_user_code(tg.MAIN_KEY)
+        flash(request, "Sent the code again.")
+    except Exception as e:  # noqa: BLE001
+        flash(request, f"Couldn't send it again: {e}", "err")
+    return redirect("/admin/telegram")
+
+
+@router.post("/telegram/main/cancel")
+async def telegram_main_cancel(request: Request, s=Depends(db_session)):
+    current_admin(request, s)
+    await form_data(request)
+    from . import telegram_service as tg
+    await tg.cancel_login(tg.MAIN_KEY)
     return redirect("/admin/telegram")
 
 
@@ -963,13 +1013,27 @@ async def telegram_vip(request: Request, s=Depends(db_session)):
     if not chats:
         flash(request, "Pick at least one group.", "err")
         return redirect("/admin/telegram")
-    runtime.save(tg_vip_chats=chats)
-    services.log(s, "telegram_vip_set", None, ",".join(chats), admin.username)
-    s.commit()
     from . import telegram_service as tg
+    try:
+        dialogs = await tg.list_main_dialogs()
+    except Exception:  # noqa: BLE001
+        dialogs = []
+    names = {str(d["id"]): {str(x["id"]): x["title"] for x in d.get("topics") or []} for d in dialogs}
+    old = runtime.vip_topics()
+    topics = {}
+    for c in chats:
+        ticked = form.get(f"topic_{c}", [])
+        ticked = [str(x) for x in (ticked if isinstance(ticked, list) else [ticked]) if str(x).isdigit()]
+        if ticked:
+            known = {**old.get(c, {}), **names.get(c, {})}
+            topics[c] = {tid: known.get(tid, f"Topic {tid}") for tid in ticked}
+    opened = [c for c in chats if form.get(f"open_{c}") == "on"]
+    runtime.save(tg_vip_chats=chats, tg_vip_topics=topics, vip_open=opened)
+    services.log(s, "telegram_vip_set", None, f"{','.join(chats)} topics={topics} open={opened}"[:400], admin.username)
+    s.commit()
     tg.reload_main()
-    flash(request, "Saved. Signals posted there are copied from now on.")
-    return redirect("/admin/telegram")
+    flash(request, "Saved. Signals posted there are copied from now on, only to customers who get each group.")
+    return redirect("/admin/telegram#vip")
 
 
 @router.post("/telegram/bot")
