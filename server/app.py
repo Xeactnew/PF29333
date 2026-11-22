@@ -11,6 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import admin, api, config, customer, scheduler, site_icon, system, telegram_service
@@ -88,6 +89,7 @@ def create_app() -> FastAPI:
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(SessionMiddleware, secret_key=config.SECRET_KEY, session_cookie="pf_session",
                        max_age=60 * 60 * 24 * 14, same_site="lax", https_only=config.HTTPS_ONLY_COOKIES)
+    app.add_middleware(GZipMiddleware, minimum_size=700)   # compress HTML/CSS/JS over the wire
     app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
     app.include_router(customer.router)
     app.include_router(admin.router)

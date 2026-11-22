@@ -36,7 +36,7 @@
   --mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
 }
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; background: var(--pine); }
+html { -webkit-text-size-adjust: 100%; background: var(--pine); scroll-behavior: smooth; }
 body {
   margin: 0; color: var(--straw); min-height: 100vh;
   font: 14.5px/1.6 var(--body); font-feature-settings: "tnum" 1, "cv11" 1; -webkit-font-smoothing: antialiased;
@@ -114,6 +114,10 @@ ul.ticks li::before { content: "›"; position: absolute; left: 4px; top: 3px; f
 .panel.glow { position: relative; border-color: transparent;
   background: linear-gradient(180deg, rgba(var(--raised-rgb),.95), rgba(var(--panel-rgb),.97)) padding-box, var(--grad) border-box; border: 1px solid transparent;
   box-shadow: 0 0 0 1px rgba(0,0,0,.2), 0 18px 60px -20px rgba(var(--c2-rgb),.45); }
+.panel { transition: transform .22s cubic-bezier(.2,.8,.3,1), box-shadow .22s, border-color .22s; }
+@media (hover: hover) and (pointer: fine) {
+  .panel:hover { transform: translateY(-2px); box-shadow: 0 1px 0 rgba(255,255,255,.05) inset, 0 28px 54px -26px rgba(0,0,0,.9); }
+}
 .panel > h2:first-child, .panel > h3:first-child { margin-top: 0; }
 .panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 12px; }
 .panel-head h2, .panel-head h3 { margin: 0; }
@@ -661,3 +665,46 @@ details.glossary dd { margin: 0; color: var(--straw-dim); }
 .btn.primary:hover { background: var(--accent-soft); }
 
 .chart-empty { padding: 40px 10px; text-align: center; }
+
+
+/* ======================================================================
+   Motion: page transitions and gentle entrances. Everything here is
+   turned off for people who prefer reduced motion (global rule above).
+   ====================================================================== */
+
+/* Smooth cross-fade between pages in browsers that support it (ignored elsewhere). */
+@view-transition { navigation: auto; }
+::view-transition-old(root) { animation: vt-out .18s ease both; }
+::view-transition-new(root) { animation: vt-in .26s ease both; }
+@keyframes vt-out { to { opacity: 0; } }
+@keyframes vt-in { from { opacity: 0; transform: translateY(6px); } }
+
+@keyframes enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* Cards inside a deck or list settle in with a quick stagger. The page's own figures are NOT hidden:
+   only grouped card collections animate, so balances and stats paint straight away. */
+.gdeck > *, .mini-trade, .plans > *, .how-steps li { animation: enter .34s cubic-bezier(.2,.8,.3,1) both; }
+.gdeck > *:nth-child(2), .mini-trade:nth-child(2) { animation-delay: .05s; }
+.gdeck > *:nth-child(3), .mini-trade:nth-child(3) { animation-delay: .1s; }
+.mini-trade:nth-child(4) { animation-delay: .13s; }
+.mini-trade:nth-child(n+5) { animation-delay: .16s; }
+
+/* Settings and other collapsibles open smoothly instead of snapping. */
+details.sec[open] > .sec-body, details.more[open] > *:not(summary),
+details.glossary[open] > dl { animation: enter .24s ease both; }
+details.sec > summary::after, details.more > summary, .gedit > summary { transition: transform .2s ease, color .15s; }
+
+/* Flash messages drop in. */
+.flash { animation: enter .3s cubic-bezier(.2,.8,.3,1) both; }
+
+/* Nav items and links get a consistent, quick transition. */
+a, .tab, .nav, .gcard, .srvpick select, .btn.link { transition: color .15s ease, background .15s ease, transform .15s ease, border-color .15s ease; }
+
+/* A subtle press on any tappable card row. */
+[data-href] { transition: transform .12s ease, background .15s ease; }
+[data-href]:active { transform: scale(.995); }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}

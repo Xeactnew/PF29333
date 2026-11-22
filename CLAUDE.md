@@ -47,6 +47,11 @@ node "VPS 1"). Live site: pipsfarmer.com (Cloudflare tunnel → 127.0.0.1:8000, 
   / archive with keep_telegram=False, because it reaches the whole personal Telegram. Admin delete has a
   "purge" box (`vault.purge`). Terms §2 covers retention. The main reader session is only cleared on a
   genuine Telegram logout (not on disconnect), so it stays logged in across restarts.
+- **Speed & motion (1.3.33):** GZipMiddleware (minimum_size=700) compresses HTML/CSS/JS; dropped the unused
+  Space Grotesk web font. Motion layer at the end of `style.css`: `@view-transition { navigation: auto }`
+  cross-fades page nav, bounded card lists (`.gdeck`, `.mini-trade`, `.plans`, `.how-steps`) stagger-enter,
+  panels lift on hover, `details` open smoothly, rows press. No blanket `.main > *` entrance (would hide
+  figures); all motion is off under `prefers-reduced-motion`. Static assets keep `?v=` immutable caching.
 - Keep the public face generic (no framework names, versions, comments or stack traces in public pages; code served to
   browsers is minified). Don't copy TradeByFocus's look or wording.
 
